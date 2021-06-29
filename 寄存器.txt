@@ -1,0 +1,25 @@
+;通用寄存器
+;					编号(二进制)	编号(十进制)
+;			64位	32位	16位	8位	 	 
+;累加寄存器	RAX	EAX	AX	AL	000	0 通过mov修改
+;计数寄存器	RCX	ECX	CX	CL	001	1
+;数据寄存器	RDX	EDX	DX	DL	010	2
+;基址寄存器	RBX	EBX	BX	BL	011	3
+;堆栈顶指针	RSP	ESP	SP	AH	100	4 指针寄存器
+;堆栈基指针	RBP	EBP	BP	CH	101	5 指针寄存器
+;变址寄存器	RSI	ESI	SI	DH	110	6 变址寄存器
+;指令寄存器	RDI	EDI	DI	BH	111	7 变址寄存器
+
+;段寄存器
+;CS 代码段寄存器 IP 偏移地址 通过jmp修改 CS:IP 指令地址 jmp后地址CS*16+IP，譬如jmp 0ff0:0100=0ff0h*16+100h=ff00h+100h=10000h
+;DS 数据库寄存器
+;ES 附加段寄存器
+;SS 堆栈段寄存器
+
+;访问存储器方式	缺省的段寄存器	可选用的段寄存器	偏移量
+;取指令			CS	 							IP
+;堆栈操作		SS	 							SP
+;一般取操作数		DS				CS、ES、SS		有效地址
+;串操作	源操作数	DS				CS、ES、SS		SI
+;	目标操作数	ES	 							DI
+;使用指针寄存器BP	SS				CS、DS、ES		有效地址
