@@ -3,19 +3,25 @@ org 07c00h
 	jmp LABEL_BEGIN
 [SECTION .gdt] ; 将以下大代码装到gdt段中
 ;Descriptor是pm.inc中定义的宏		段地址		段界限				属性
-LABEL_GDT:			Descriptor	0,			0,					0;
-LABEL_DESC_CODE32:	Descriptor	0,			SegCode32Len -1,	DA_C+DA_32;
-LABEL_DESC_VIDEO:	Descriptor	0B8000h,	0ffffh,				DA_DRW
+LABEL_GDT:			Descriptor	0,			0,					0 ;定义1个GDT段
+LABEL_DESC_CODE32:	Descriptor	0,			SegCode32Len -1,	DA_C+DA_32 ;定义1个GDT段
+LABEL_DESC_VIDEO:	Descriptor	0B8000h,	0ffffh,				DA_DRW ;显存段
+;0000:0000~9FFF:000F->Ram
+;A0000~AFFFF: VGA显存
+;B0000~B7FFF: 黑白显存
+;B8000~BFFFF: 彩色显存
+;C0000~C7FFF: 显卡ROM空间（后来被改造成多种用途，也可以映射显存）
+;C8000~FFFFE: 留给BIOS以及其它硬件使用（比如硬盘ROM之类的）。
 
-GdtLen	equ $ - LABEL_GDT
-GdtPtr	dw	GdtLen - 1
-		dd 	0
+GdtLen	equ $ - LABEL_GDT ;GDT长度
+GdtPtr	dw	GdtLen - 1 ;GDT栈顶指针
+		dd 	0 ;GDT基址
 
-SelectorCode32	equ	LABEL_DESC_CODE32 - LABEL_GDT
+SelectorCode32	equ	LABEL_DESC_CODE32 - LABEL_GDT ;选择子，大概就是偏移量offset
 SelectorVideo	equ	LABEL_DESC_VIDEO - LABEL_GDT
 
-[SECTION .s16]
-[BITS 16]
+[SECTION .s16] ;将下面代码装到16位的段里
+[BITS 16] ;16位编译模式
 LABEL_BEGIN:
 	mov ax,cs
 	mov ds,ax
@@ -36,8 +42,8 @@ LABEL_BEGIN:
 	add eax,LABEL_GDT
 	mov dword [GdtPtr+2],eax
 	lgdt [GdtPtr]
-	cli
-	in al,92h
+	cli ; 关中断，32位下中断模式有变
+	in al,92h ; 打开A20地址线
 	or al,00000010b
 	out 92h,al
 	mov eax,cr0
@@ -45,8 +51,8 @@ LABEL_BEGIN:
 	mov cr0, eax
 	jmp dword SelectorCode32:0
 
-[SECTION .s32]
-[BITS 32]
+[SECTION .s32] ;将下面代码装到32位的段里
+[BITS 32] ;32位编译模式
 
 LABEL_SEG_CODE32:
 	mov ax,SelectorVideo
