@@ -5,7 +5,7 @@
 	mov ds,ax
 	mov es,ax
 	call DispStr ; call == push eip + jmp
-	jmp $
+	jmp $ ; 跳转到当前地址，死循环，不如halt指令
 DispStr:
 	mov ax, BootMessage
 	mov bp, ax ; AH为13时，ES:BP表示串地址
