@@ -1,0 +1,12 @@
+区域名称	起止地址			占用空间		描述
+IVT		0:0000-0:03FF	1 KB		中断向量表（实模式）	Interrupt Vector Table
+BDA		0:0400-0:04FF	0.25 KB		BIOS 数据区	BIOS data area
+		0:0500-0:7BFF	29.75 KB	自由使用区	Conventional memory
+BS		0:7C00-0:7DFF	0.5 KB		引导扇区	OS BootSector
+		0:7E00-7:FFFF	480.5 KB	自由使用区	Conventional memory
+		8:0000-9:FBFF	120 KB		自由使用区	Conventional memory
+EBDA	9:FC00-9:FFFF	1 KB		扩展 BIOS 数据区	Extended BIOS data area
+VB		A:0000-A:FFFF	64 KB		EGA/VGA/XGA/XVGA 模式（320*200*8）显存	
+		B:0000-B:7FFF	32 KB		单色文字显存	Mono text video buffer
+		B:8000-B:FFFF	32 KB		彩色文字显存	CGA/EGA+ chroma text video buffer
+		C:0000-F:FFFF	264 KB		BIOS 定义区	
