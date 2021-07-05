@@ -5,12 +5,19 @@
 ;Descriptor是pm.inc中定义的宏		段地址		段界限				属性
 LABEL_GDT:			Descriptor	0,			0,					0 			;定义1个空GDT段
 LABEL_DESC_NORMAL:	Descriptor 	0,			0ffffh,				DA_DRW		;
-LABEL_DESC_CODE32:	Descriptor	0,			SegCode32Len -1,	DA_C+DA_32	;定义1个GDT段
-LABEL_DESC_CODE16:	Descriptor 	0,			0ffffh,				DA_C 		;16位代码段
+LABEL_DESC_CODE32:	Descriptor	0,			SegCode32Len -1,	DA_C+DA_32	;非一致,定义1个GDT段
+LABEL_DESC_CODE16:	Descriptor 	0,			0ffffh,				DA_C 		;非一致,16位代码段
+LABEL_DESC_CODE_DEST: Descriptor 	0,		SegCodeDestLen - 1,		DA_C+DA_32;非一致
+LABEL_DESC_CODE_RING3: Descriptor 	0,		SegCodeRing3Len - 1,	DA_C+DA_32+DA_DPL3 ; 非一致
 LABEL_DESC_DATA:	Descriptor 	0,			DataLen-1,			DA_DRW
 LABEL_DESC_STACK: 	Descriptor 	0,			TopOfStack,			DA_DRWA+DA_32;32位栈
-LABEL_DESC_TEST:	Descriptor 	0500000h,	0ffffh,				DA_DRW
-LABEL_DESC_VIDEO:	Descriptor	0B8000h,	0ffffh,				DA_DRW 		;显存段，见内存分布图
+LABEL_DESC_STACK3: 	Descriptor 	0,			TopOfStack3,		DA_DRWA+DA_32+DA_DPL3;32位栈
+LABEL_DESC_LDT:		Descriptor 	0,			LDTLen - 1,			DA_LDT
+; LABEL_DESC_TEST:	Descriptor 	0500000h,	0ffffh,				DA_DRW
+LABEL_DESC_TSS:		Descriptor 	0,			TSSLen -1,			DA_386TSS
+LABEL_DESC_VIDEO:	Descriptor	0B8000h,	0ffffh,				DA_DRW+DA_DPL3 		;显存段，见内存分布图
+
+LABEL_CALL_GATE_TEST: Gate SelectorCodeDest,0,0,DA_386CGate+DA_DPL3
 
 GdtLen	equ $ - LABEL_GDT ;GDT长度
 
@@ -30,28 +37,79 @@ GdtPtr	dw	GdtLen - 1 ;GDT界限，低16位
 SelectorNormal	equ	LABEL_DESC_NORMAL 	- LABEL_GDT
 SelectorCode32	equ	LABEL_DESC_CODE32 		- LABEL_GDT
 SelectorCode16	equ	LABEL_DESC_CODE16 		- LABEL_GDT
+SelectorCodeDest	equ	LABEL_DESC_CODE_DEST 		- LABEL_GDT
+SelectorCodeRing3	equ	LABEL_DESC_CODE_RING3 		- LABEL_GDT + SA_RPL3
 SelectorData	equ	LABEL_DESC_DATA 		- LABEL_GDT
 SelectorStack	equ	LABEL_DESC_STACK 		- LABEL_GDT
-SelectorTest	equ	LABEL_DESC_TEST 		- LABEL_GDT
+SelectorStack3	equ	LABEL_DESC_STACK3 		- LABEL_GDT + SA_RPL3
+SelectorLDT		equ	LABEL_DESC_LDT 			- LABEL_GDT
+; SelectorTest	equ	LABEL_DESC_TEST 		- LABEL_GDT
+SelectorTSS		equ	LABEL_DESC_TSS 		- LABEL_GDT
 SelectorVideo	equ	LABEL_DESC_VIDEO 		- LABEL_GDT
+
+SelectorCallGateTest	equ	LABEL_CALL_GATE_TEST 		- LABEL_GDT + SA_RPL3
 
 [SECTION .data1] ;数据段
 ALIGN 32
 [BITS 32]
 LABEL_DATA:
 	SPValueInRealMode dw 0
-	PMMessage: dd "In Protect Mode now. ^-^",0 
+	PMMessage: db "In Protect Mode now. ^-^",0 
 	OffsetPMMessage equ PMMessage - $$
-	StrTest: dd "ABCDEFGHIJKLMNOPQRSTUVWXYZ",0
+	StrTest: db "ABCDEFGHIJKLMNOPQRSTUVWXYZ",0
 	OffsetStrTest equ StrTest - $$
 	DataLen equ $-LABEL_DATA
 
+;全局堆栈段
 [SECTION .gs]
 ALIGN 32
 [BITS 32]
 LABEL_STACK:
 	times 512 db 0
 	TopOfStack equ $ - LABEL_STACK - 1
+
+; 堆栈段ring3
+[SECTION .s3]
+ALIGN 32
+[BITS 32]
+LABEL_STACK3:
+	times 512 db 0
+	TopOfStack3 equ $ - LABEL_STACK3 - 1
+
+[SECTION .tss]
+ALIGN 32
+[BITS 32]
+LABEL_TSS:
+	DD 0; back
+	DD TopOfStack ;0级堆栈
+	DD SelectorStack;
+	DD 0; 1级堆栈
+	DD 0;
+	DD 0; 2级堆栈
+	DD 0;
+	DD 0; CR3
+	DD 0; EIP
+	DD 0; EFLAGS
+	DD 0; EAX
+	DD 0; ECX
+	DD 0; EDX
+	DD 0; EBX
+	DD 0; ESP
+	DD 0; EBP
+	DD 0; ESI
+	DD 0; EDI
+	DD 0; ES
+	DD 0; CS
+	DD 0; SS
+	DD 0; DS
+	DD 0; FS
+	DD 0; GS
+	DD 0; LDT
+	DW 0; 调试陷进标志
+	DW $-LABEL_TSS+2; I/O位图基址
+	DB 0ffh; I/O位图结束标志
+TSSLen equ $ - LABEL_TSS
+
 
 [SECTION .s16] ;将下面代码装到16位的段里
 [BITS 16] ;16位编译模式
@@ -91,7 +149,6 @@ LABEL_BEGIN:
 	mov ax,cs
 	shl eax,4 ;左移四位，相当于乘以16，实模式下计算物理地址
 	add eax,LABEL_SEG_CODE32 ;段+偏移地址, 计算出其真实物理首地址，段是cs
-
 	;此处将前面计算出的真实物理地址, 按规则放入GDT相应的段基址位置.
 	;注: 保护模式寻址步骤:
     ;   1). Selector 选择子 => 取得对应 GDT 的位置
@@ -102,6 +159,26 @@ LABEL_BEGIN:
 	shr eax,16
 	mov byte [LABEL_DESC_CODE32+4],al 
 	mov byte [LABEL_DESC_CODE32+7],ah 
+
+	;特权级3段的代码
+    xor eax,eax
+    mov ax,ds
+    shl eax,4 
+    add eax,LABEL_CODE_RING3
+    mov word [LABEL_DESC_CODE_RING3+2],ax 
+    shr eax,16
+    mov byte [LABEL_DESC_CODE_RING3+4],al 
+    mov byte [LABEL_DESC_CODE_RING3+7],ah 
+	
+	;测试调用们段描述符
+    xor eax,eax
+    mov ax,ds
+    shl eax,4 
+    add eax,LABEL_SEG_CODE_DEST
+    mov word [LABEL_DESC_CODE_DEST+2],ax 
+    shr eax,16
+    mov byte [LABEL_DESC_CODE_DEST+4],al 
+    mov byte [LABEL_DESC_CODE_DEST+7],ah 
 
 	; 初始化数据段描述符
 	xor eax,eax
@@ -122,6 +199,47 @@ LABEL_BEGIN:
 	shr eax,16
 	mov byte [LABEL_DESC_STACK+4],al 
 	mov byte [LABEL_DESC_STACK+7],ah 
+
+	; 初始化堆栈段描述符ring3
+	xor eax,eax
+	mov ax,ds
+	shl eax,4 ;左移四位，相当于乘以16，实模式下计算物理地址
+	add eax,LABEL_STACK3 ;段+偏移地址, 计算出其真实物理首地址，段是cs
+	mov word [LABEL_DESC_STACK3+2],ax 
+	shr eax,16
+	mov byte [LABEL_DESC_STACK3+4],al 
+	mov byte [LABEL_DESC_STACK3+7],ah 
+
+	; 初始化LDT在GDT中的描述符，LDT是二级段，自身要在GDT中声明，里面又可以存放很多段
+	xor eax,eax
+	mov ax,ds
+	shl eax,4 ;左移四位，相当于乘以16，实模式下计算物理地址
+	add eax,LABEL_LDT ;段+偏移地址, 计算出其真实物理首地址，段是cs
+	mov word [LABEL_DESC_LDT+2],ax 
+	shr eax,16
+	mov byte [LABEL_DESC_LDT+4],al 
+	mov byte [LABEL_DESC_LDT+7],ah 
+
+	; 初始化LDT中的描述符
+	xor eax,eax
+	mov ax,ds
+	shl eax,4 ;左移四位，相当于乘以16，实模式下计算物理地址
+	add eax,LABEL_CODE_A ;段+偏移地址, 计算出其真实物理首地址，段是cs
+	mov word [LABEL_LDT_DESC_CODEA+2],ax 
+	shr eax,16
+	mov byte [LABEL_LDT_DESC_CODEA+4],al 
+	mov byte [LABEL_LDT_DESC_CODEA+7],ah 
+
+	; TSS
+    xor eax,eax
+    mov ax,ds
+    shl eax,4 
+    add eax,LABEL_TSS
+    mov word [LABEL_DESC_TSS+2],ax 
+    shr eax,16
+    mov byte [LABEL_DESC_TSS+4],al 
+    mov byte [LABEL_DESC_TSS+7],ah 
+
 
 	; 为加载 GDTR 作准备
 	xor eax,eax
@@ -175,8 +293,8 @@ LABEL_REAL_ENTRY:
 LABEL_SEG_CODE32:
 	mov ax,SelectorData  
 	mov ds,ax 
-	mov ax, SelectorTest  
-	mov es,ax 
+	; mov ax, SelectorTest  
+	; mov es,ax 
 	mov ax,SelectorVideo
 	mov gs,ax
 	mov ax, SelectorStack  
@@ -199,10 +317,27 @@ LABEL_SEG_CODE32:
 	jmp .1
 .2: ;显示完毕
 	call DispReturn ; 换行
-	call TestRead
-	call TestWrite
-	call TestRead
-	jmp SelectorCode16:0 ;回到16位
+
+	mov ax, SelectorTSS  
+	ltr ax ; 设置任务状态段寄存器 TR
+
+	push SelectorStack3 ;ss
+	push TopOfStack3 ;esp
+	push SelectorCodeRing3 ;cs
+	push 0 ;eip
+	retf ; 通过tss回到低特权级段
+
+    ;call SelectorCallGateTest:0
+
+	;mov ax, SelectorLDT
+	;lldt ax
+
+	;jmp SelectorLDTCodeA:0 ;跳入局部任务
+
+	; call TestRead
+	; call TestWrite
+	; call TestRead
+	; jmp SelectorCode16:0 ;回到16位
 
 ;	mov edi,(80*11+79)*2 ;屏幕的第11行，第79列
 ;	mov ah,0ch; 0000: 黑底    1100: 红字
@@ -291,6 +426,24 @@ DispReturn:
 
 SegCode32Len equ $ - LABEL_SEG_CODE32
 
+[SECTION .sdest]
+[BITS 32]
+LABEL_SEG_CODE_DEST:
+    mov ax, SelectorVideo
+    mov gs, ax
+    
+    mov edi,(80*11+0)*2
+    mov ah,0ch
+    mov al, 'C'
+    mov [gs:edi], ax
+
+	mov ax, SelectorLDT
+	lldt ax
+
+	jmp SelectorLDTCodeA:0 ;跳入局部任务
+
+SegCodeDestLen equ $ - LABEL_SEG_CODE_DEST
+
 ;16位保护模式代码段，由保护模式下的32位代码段跳入
 [SECTION .s16code]
 ALIGN 32
@@ -312,3 +465,42 @@ LABEL_GO_BACK_TO_REAL:
 	jmp 0:LABEL_REAL_ENTRY ; 回到16位代码段，段址在LABEL_BEGIN跳入32位之前预先设置
 
 Code16Len equ $-LABEL_SEG_CODE16
+
+[SECTION .ldt]
+ALIGN 32
+LABEL_LDT:
+LABEL_LDT_DESC_CODEA: Descriptor 0, CodeALen -1, DA_C+DA_32
+LDTLen equ $-LABEL_LDT
+
+SelectorLDTCodeA equ LABEL_LDT_DESC_CODEA - LABEL_LDT + SA_TIL; TI 位表示局部描述符表
+
+[SECTION .la]
+ALIGN 32
+[BITS 32]
+LABEL_CODE_A:
+	mov ax, SelectorVideo  
+	mov gs, ax
+
+	mov edi, (80 *12+0)*2
+	mov ah,0ch
+	mov al, 'L'
+	mov [gs:edi],ax 
+
+	jmp SelectorCode16:0
+CodeALen equ $-LABEL_CODE_A
+
+[SECTION .ring3]
+ALIGN 32
+[BITS 32]
+LABEL_CODE_RING3:
+	mov ax, SelectorVideo  
+	mov gs, ax
+
+	mov edi, (80 *14+0)*2
+	mov ah,0ch
+	mov al, '3'
+	mov [gs:edi],ax 
+
+	call SelectorCallGateTest:0 ; 通过调用门回到高特权级段
+	jmp $
+SegCodeRing3Len equ $ - LABEL_CODE_RING3
