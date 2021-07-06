@@ -23,3 +23,12 @@
 ;串操作	源操作数	DS				CS、ES、SS		SI
 ;	目标操作数	ES	 							DI
 ;使用指针寄存器BP	SS				CS、DS、ES		有效地址
+
+;CR0
+;63-32	31	30	29	28-19	18	17	16	15-6	5	4	3	2	1	0
+;保留位0	PG	CD	NW	保留		AM	R 	WP	保留		NE	ET	TS	EM	MP	PE
+;PG：分页
+;PE：保护模式
+
+
+

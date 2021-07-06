@@ -1,10 +1,16 @@
 %include "pm.inc"
+
+PageDirBase equ 200000h
+PageTblBase equ 201000h
+
 	org 0100h
 	jmp LABEL_BEGIN
 [SECTION .gdt] ; 将以下大代码装到gdt段中
 ;Descriptor是pm.inc中定义的宏		段地址		段界限				属性
 LABEL_GDT:			Descriptor	0,			0,					0 			;定义1个空GDT段
 LABEL_DESC_NORMAL:	Descriptor 	0,			0ffffh,				DA_DRW		;
+LABEL_DESC_PAGE_DIR:	Descriptor 	PageDirBase,	4096,		DA_DRW
+LABEL_DESC_PAGE_TBL:	Descriptor 	PageTblBase,	1023,		DA_DRW|DA_LIMIT_4K;此时G位置DA_LIMIT_4K，界限粒度为4K，所以1023表示0－1023的1024个4K 
 LABEL_DESC_CODE32:	Descriptor	0,			SegCode32Len -1,	DA_C+DA_32	;非一致,定义1个GDT段
 LABEL_DESC_CODE16:	Descriptor 	0,			0ffffh,				DA_C 		;非一致,16位代码段
 LABEL_DESC_CODE_DEST: Descriptor 	0,		SegCodeDestLen - 1,		DA_C+DA_32;非一致
@@ -35,6 +41,8 @@ GdtPtr	dw	GdtLen - 1 ;GDT界限，低16位
 ;下个选择子的位置就是9，再下个就是17
 ;所以选择子相减就是8的倍数，类似xxxx:x000这样，低3位是0，被用来存储一些信息，详见pm.inc
 SelectorNormal	equ	LABEL_DESC_NORMAL 	- LABEL_GDT
+SelectorPageDir	equ	LABEL_DESC_PAGE_DIR 	- LABEL_GDT
+SelectorPageTbl	equ	LABEL_DESC_PAGE_TBL 	- LABEL_GDT
 SelectorCode32	equ	LABEL_DESC_CODE32 		- LABEL_GDT
 SelectorCode16	equ	LABEL_DESC_CODE16 		- LABEL_GDT
 SelectorCodeDest	equ	LABEL_DESC_CODE_DEST 		- LABEL_GDT
@@ -53,12 +61,44 @@ SelectorCallGateTest	equ	LABEL_CALL_GATE_TEST 		- LABEL_GDT + SA_RPL3
 ALIGN 32
 [BITS 32]
 LABEL_DATA:
-	SPValueInRealMode dw 0
-	PMMessage: db "In Protect Mode now. ^-^",0 
+_szPMMessage: db "In Protect Mode now. ^-^",0AH,0AH,0 
+_szMemChkTitle:	db "BaseAddrL BaseAddrH LengthLow LengthHigh Type", 0AH, 0
+_zsRAMSize db "RAM size:", 0 
+_wSPValueInRealMode dw 0
+_dwMCRNumber: dd 0
+_dwDispPos: dd (80*6 + 0) * 2
+_dwMemSize: dd 0
+_ARDStruct:
+	_dwBaseAddrLow: dd 0
+	_dwBaseAddrHigh: dd 0
+	_dwLengthLow: dd 0
+	_dwLengthHigh: dd 0
+	_dwType: dd 0
+
+_MemChkBuf: times 256 db 0
+
+;保护模式用段+偏移
+szPMMessage equ _szPMMessage - $$
+szMemChkTitle equ _szMemChkTitle - $$
+zsRAMSize equ _zsRAMSize - $$
+wSPValueInRealMode equ _wSPValueInRealMode - $$
+dwMCRNumber equ _dwMCRNumber - $$
+dwDispPos equ _dwDispPos - $$
+dwMemSize equ _dwMemSize - $$
+ARDStruct equ _ARDStruct - $$
+	dwBaseAddrLow equ _dwBaseAddrLow - $$
+	dwBaseAddrHigh equ _dwBaseAddrHigh - $$
+	dwLengthLow equ _dwLengthLow - $$
+	dwLengthHigh equ _dwLengthHigh - $$
+	dwType equ _dwType - $$
+
+MemChkBuf equ _MemChkBuf - $$
+	
 	OffsetPMMessage equ PMMessage - $$
 	StrTest: db "ABCDEFGHIJKLMNOPQRSTUVWXYZ",0
 	OffsetStrTest equ StrTest - $$
-	DataLen equ $-LABEL_DATA
+	
+DataLen equ $-LABEL_DATA
 
 ;全局堆栈段
 [SECTION .gs]
@@ -120,18 +160,33 @@ LABEL_BEGIN:
 	mov ss,ax
 	mov sp,0100h ; 未知
 
-
 ;段间转移直接寻址是5位
-
 ;段址高8位
 ;段址低8位
 ;偏移高8位
 ;偏移低8位
 ;操作数
-
 ;存储段址
-	mov [LABEL_GO_BACK_TO_REAL+3],ax 
-	mov [SPValueInRealMode],sp
+	mov [LABEL_GO_BACK_TO_REAL+3],ax ;把段址存在高16位
+	mov [_wSPValueInRealMode],sp
+
+	; 使用中断获取内存
+	mov ebx, 0
+	mov di, _MemChkBug; es:di指向地址范围描述符ARDS
+.loop:
+	mov eax, 0E820h ; 功能号
+	mov ecx, 20 ; 每次BIOS填充的大小
+	mov edx, 0534D4150h ; 标志
+	int 15h
+	jc LABEL_MEM_CHK_FAIL ; 判断CF位是否有错误
+	add di,20; 填充下一个空间
+	inc dword [_dwMCRNumber]
+	cmp ebx, 0 ; ebx结束标志
+	jne .loop
+	jmp LABEL_MEM_CHK_OK
+LABEL_MEM_CHK_FAIL:
+	mov dword [_dwMCRNumber],0 
+LABEL_MEM_CHK_OK:
 
 	; 返回16位的代码
 	mov ax,cs 
@@ -295,28 +350,25 @@ LABEL_SEG_CODE32:
 	mov ds,ax 
 	; mov ax, SelectorTest  
 	; mov es,ax 
+	mov ax,SelectorData  
+	mov es,ax 
 	mov ax,SelectorVideo
 	mov gs,ax
 	mov ax, SelectorStack  
 	mov ss,ax
 	mov esp,TopOfStack
 
-	mov ah,0ch;0000: 黑底    1100: 红字
-	xor esi,esi ;放置源
-	xor edi,edi ;放置目标
-	mov esi,OffsetPMMessage
-	mov edi,(80*10+0)*2;10行0列，1个字符占两个字节
-	cld
+	push szPMMessage ;入栈
+	call DispStr
+	add esp, 4; 恢复栈
 
-.1:
-	lodsb ; 取SI中的字节
-	test al,al ;Test对两个参数(目标，源)执行AND逻辑操作，并根据结果设置标志寄存器，结果本身不会保存。
-	jz .2 ; 参见数据段字符串定义，末尾都有个0
-	mov [gs:edi],ax 
-	add edi,2 ; 空1个字符显示
-	jmp .1
-.2: ;显示完毕
-	call DispReturn ; 换行
+	push szMemChkTitle 
+	call DispStr
+	add esp, 4
+	
+	call DispMemSize
+
+	call SetupPaging
 
 	mov ax, SelectorTSS  
 	ltr ax ; 设置任务状态段寄存器 TR
@@ -345,84 +397,39 @@ LABEL_SEG_CODE32:
 ;	mov [gs:edi],ax ; 将SelectorVideo装到gs，并偏移edi
 ;	jmp $
 
-TestRead:
-	xor esi,esi 
-	mov ecx,8  ;循环8次
-.loop:
-	mov al,[es:esi] ;es指向test段选择子，test段基地址在5M处
-	call DispAL
-	inc esi
-	loop .loop ;循环8次退出
-	call DispReturn
-	ret
-
-TestWrite:
-	push esi
-	push edi
-	xor esi,esi  
-	xor edi,edi  
-	mov esi, OffsetStrTest
-	cld ; 方向标志位DF复位，0向高地址增加，1向低地址减小
+SetupPaging:
+	mov ax, SelectorPageDir
+	mov es,ax 
+	mov ecx, 1024
+	xor edi,edi
+	xor eax,eax
+	mov eax, PageTblBase | PG_P |PG_USU | PG_RWW
 .1:
-	lodsb ; 从SI中取一个byte
-	test al,al 
-	jz .2
-	mov [es:edi],al
-	inc edi
-	jmp .1
+	stosd ;将eax的内容复制到es:edi，并将edi增加4个字节
+	add eax, 4096
+	loop .1
+
+	mov ax, SelectorPageTbl  
+	mov es,ax 
+	mov ecx,1024*1024
+	xor edi,edi 
+	xor eax, eax  
+	mov eax, PG_P | PG_USU | PG_RWW ; 从物理地址0000:0000h开始
 .2:
-	pop edi
-	pop esi
+	stosd  
+	add eax,4096
+	loop .2
+
+	mov eax, PageDirBase
+	mov cr3, eax; 将页目录首地址放到cr3，以后会自动从这里寻址
+	mov eax, cr0
+	or	eax, 80000000h
+	mov	cr0, eax
+	jmp short .3
+.3:
+	nop
 	ret
 
-; 显示 AL 中的数字 用16进制显示
-; 默认地:
-;	数字已经存在 AL 中
-;	edi 始终指向要显示的下一个字符的位置
-; 被改变的寄存器:
-;	ax, edi
-
-DispAL:
-	push ecx 
-	push edx
-	mov ah,0ch; 0000: 黑底    1100: 红字
-	mov dl,al  
-	shr al,4;先高4位
-	mov ecx,2; loop两次
-.begin:
-	and al,01111b
-	cmp al,9;无符号大于则跳转
-	ja .1
-	add al,'0'
-	jmp .2
-.1:
-	sub al,0AH
-	add al, 'A'
-.2:
-	mov [gs:edi],ax;显示
-	add edi,2
-	mov al,dl  ;开始低4位
-	loop .begin
-	add edi,2
-	pop edx
-	pop ecx
-	ret
-
-;80*25模式下，一行80个字符，160个字节，总共25行
-DispReturn:
-	push eax
-	push ebx
-	mov eax,edi  
-	mov bl,160
-	div bl; al = ax / 160, ah = ax mod 160，al表示行，ah是余数表示列
-	and eax,0FFH ;丢弃ah，只保留al，即保留行
-	inc eax ;行增加1
-	mov bl,160
-	mul bl;下1行0列开始显示
-	mov edi,eax
-	pop ebx
-	pop eax
-	ret
 
 SegCode32Len equ $ - LABEL_SEG_CODE32
 
@@ -459,7 +466,8 @@ LABEL_SEG_CODE16:
 	mov ss,ax  
 	; 关闭PE位，只能在16位模式更改
 	mov eax,cr0
-	and al,11111110b
+	and	eax, 7FFFFFFEh		; PE=0, PG=0
+	; and al,11111110b
 	mov cr0,eax
 LABEL_GO_BACK_TO_REAL:
 	jmp 0:LABEL_REAL_ENTRY ; 回到16位代码段，段址在LABEL_BEGIN跳入32位之前预先设置
