@@ -1,17 +1,28 @@
 %include "pm.inc"
+; %include "lib.inc" ;崩
 
-PageDirBase equ 200000h
-PageTblBase equ 201000h
+PageDirBase0 equ 200000h
+PageTblBase0 equ 201000h
+PageDirBase1 equ 210000h
+PageTblBase1 equ 211000h
 
-	org 0100h
+LinearAddrDemo equ 00401000h
+ProcFoo equ 00401000h
+ProcBar equ 00501000h
+ProcPagingDemo equ 00301000h
+
+org 0100h
 	jmp LABEL_BEGIN
 [SECTION .gdt] ; 将以下大代码装到gdt段中
 ;Descriptor是pm.inc中定义的宏		段地址		段界限				属性
 LABEL_GDT:			Descriptor	0,			0,					0 			;定义1个空GDT段
 LABEL_DESC_NORMAL:	Descriptor 	0,			0ffffh,				DA_DRW		;
-LABEL_DESC_PAGE_DIR:	Descriptor 	PageDirBase,	4096,		DA_DRW
-LABEL_DESC_PAGE_TBL:	Descriptor 	PageTblBase,	1023,		DA_DRW|DA_LIMIT_4K;此时G位置DA_LIMIT_4K，界限粒度为4K，所以1023表示0－1023的1024个4K 
-LABEL_DESC_CODE32:	Descriptor	0,			SegCode32Len -1,	DA_C+DA_32	;非一致,定义1个GDT段
+; LABEL_DESC_PAGE_DIR:	Descriptor 	PageDirBase,	4095,		DA_DRW
+; LABEL_DESC_PAGE_TBL:	Descriptor 	PageTblBase,	1023,		DA_DRW|DA_LIMIT_4K;此时G位置DA_LIMIT_4K，界限粒度为4K，所以1023表示0－1023的1024个4K 
+; LABEL_DESC_PAGE_TBL:	Descriptor 	PageTblBase,	16*4096 - 1,		DA_DRW;16个页即可
+LABEL_DESC_FLAT_C: Descriptor 	0,			0ffffh,				DA_CR|DA_32|DA_LIMIT_4K;代码段
+LABEL_DESC_FLAT_RW: Descriptor 	0,			0ffffh,				DA_DRW|DA_LIMIT_4K;数据段
+LABEL_DESC_CODE32:	Descriptor	0,			SegCode32Len -1,	DA_CR+DA_32	;非一致,定义1个GDT段
 LABEL_DESC_CODE16:	Descriptor 	0,			0ffffh,				DA_C 		;非一致,16位代码段
 LABEL_DESC_CODE_DEST: Descriptor 	0,		SegCodeDestLen - 1,		DA_C+DA_32;非一致
 LABEL_DESC_CODE_RING3: Descriptor 	0,		SegCodeRing3Len - 1,	DA_C+DA_32+DA_DPL3 ; 非一致
@@ -41,8 +52,10 @@ GdtPtr	dw	GdtLen - 1 ;GDT界限，低16位
 ;下个选择子的位置就是9，再下个就是17
 ;所以选择子相减就是8的倍数，类似xxxx:x000这样，低3位是0，被用来存储一些信息，详见pm.inc
 SelectorNormal	equ	LABEL_DESC_NORMAL 	- LABEL_GDT
-SelectorPageDir	equ	LABEL_DESC_PAGE_DIR 	- LABEL_GDT
-SelectorPageTbl	equ	LABEL_DESC_PAGE_TBL 	- LABEL_GDT
+; SelectorPageDir	equ	LABEL_DESC_PAGE_DIR 	- LABEL_GDT
+; SelectorPageTbl	equ	LABEL_DESC_PAGE_TBL 	- LABEL_GDT
+SelectorFlatC	equ	LABEL_DESC_FLAT_C 	- LABEL_GDT
+SelectorFlatRW	equ	LABEL_DESC_FLAT_RW 	- LABEL_GDT
 SelectorCode32	equ	LABEL_DESC_CODE32 		- LABEL_GDT
 SelectorCode16	equ	LABEL_DESC_CODE16 		- LABEL_GDT
 SelectorCodeDest	equ	LABEL_DESC_CODE_DEST 		- LABEL_GDT
@@ -61,9 +74,11 @@ SelectorCallGateTest	equ	LABEL_CALL_GATE_TEST 		- LABEL_GDT + SA_RPL3
 ALIGN 32
 [BITS 32]
 LABEL_DATA:
+_BootMessage:		db	"Hello, OS world!", 0AH, 0
 _szPMMessage: db "In Protect Mode now. ^-^",0AH,0AH,0 
 _szMemChkTitle:	db "BaseAddrL BaseAddrH LengthLow LengthHigh Type", 0AH, 0
-_zsRAMSize db "RAM size:", 0 
+_szRAMSize db "RAM size:", 0 
+_szReturn			db	0Ah, 0
 _wSPValueInRealMode dw 0
 _dwMCRNumber: dd 0
 _dwDispPos: dd (80*6 + 0) * 2
@@ -74,13 +89,16 @@ _ARDStruct:
 	_dwLengthLow: dd 0
 	_dwLengthHigh: dd 0
 	_dwType: dd 0
+_PageTableNumber dd 0
 
 _MemChkBuf: times 256 db 0
 
 ;保护模式用段+偏移
+BootMessage equ _BootMessage - $$
 szPMMessage equ _szPMMessage - $$
 szMemChkTitle equ _szMemChkTitle - $$
-zsRAMSize equ _zsRAMSize - $$
+szRAMSize equ _szRAMSize - $$
+szReturn		equ	_szReturn	- $$
 wSPValueInRealMode equ _wSPValueInRealMode - $$
 dwMCRNumber equ _dwMCRNumber - $$
 dwDispPos equ _dwDispPos - $$
@@ -91,10 +109,9 @@ ARDStruct equ _ARDStruct - $$
 	dwLengthLow equ _dwLengthLow - $$
 	dwLengthHigh equ _dwLengthHigh - $$
 	dwType equ _dwType - $$
-
+PageTableNumber equ _PageTableNumber -$$
 MemChkBuf equ _MemChkBuf - $$
 	
-	OffsetPMMessage equ PMMessage - $$
 	StrTest: db "ABCDEFGHIJKLMNOPQRSTUVWXYZ",0
 	OffsetStrTest equ StrTest - $$
 	
@@ -172,7 +189,7 @@ LABEL_BEGIN:
 
 	; 使用中断获取内存
 	mov ebx, 0
-	mov di, _MemChkBug; es:di指向地址范围描述符ARDS
+	mov di, _MemChkBuf; es:di指向地址范围描述符ARDS
 .loop:
 	mov eax, 0E820h ; 功能号
 	mov ecx, 20 ; 每次BIOS填充的大小
@@ -197,7 +214,6 @@ LABEL_MEM_CHK_OK:
 	shr eax,16
 	mov byte [LABEL_DESC_CODE16+4],al 
 	mov byte [LABEL_DESC_CODE16+7],ah 
-
 
 	;此处计算出了 LABEL_SEG_CODE32 的真实物理地址,保存于 eax 中.
 	xor eax,eax
@@ -295,7 +311,6 @@ LABEL_MEM_CHK_OK:
     mov byte [LABEL_DESC_TSS+4],al 
     mov byte [LABEL_DESC_TSS+7],ah 
 
-
 	; 为加载 GDTR 作准备
 	xor eax,eax
 	mov ax,ds;ds中存放的是cs值
@@ -326,13 +341,12 @@ LABEL_MEM_CHK_OK:
 	jmp dword SelectorCode32:0	; 执行这一句会把 SelectorCode32 装入 cs,
 					; 并跳转到 Code32Selector:0  处
 
-
 LABEL_REAL_ENTRY:
 	mov ax,cs ;CS段寄存器已经切换到实模式
 	mov ds,ax 
 	mov es,ax 
 	mov ss,ax 
-	mov sp,[SPValueInRealMode]
+	mov sp,[_wSPValueInRealMode]
 	in al,92h
 	and al,11111101b
 	out 92h,al
@@ -344,12 +358,11 @@ LABEL_REAL_ENTRY:
 
 [SECTION .s32] ;将下面代码装到32位的段里
 [BITS 32] ;32位编译模式
+; %include "lib.inc" ;继续崩
 
 LABEL_SEG_CODE32:
 	mov ax,SelectorData  
 	mov ds,ax 
-	; mov ax, SelectorTest  
-	; mov es,ax 
 	mov ax,SelectorData  
 	mov es,ax 
 	mov ax,SelectorVideo
@@ -365,10 +378,14 @@ LABEL_SEG_CODE32:
 	push szMemChkTitle 
 	call DispStr
 	add esp, 4
+
 	
 	call DispMemSize
 
-	call SetupPaging
+	call PagingDemo
+
+	; call SetupPaging ; 先注释掉这行获取当前内存大小，然后更改LABEL_DESC_PAGE_TBL界限大小，
+	; ;所以为什么不在16位的地方直接更改界限大小？
 
 	mov ax, SelectorTSS  
 	ltr ax ; 设置任务状态段寄存器 TR
@@ -391,36 +408,132 @@ LABEL_SEG_CODE32:
 	; call TestRead
 	; jmp SelectorCode16:0 ;回到16位
 
-;	mov edi,(80*11+79)*2 ;屏幕的第11行，第79列
-;	mov ah,0ch; 0000: 黑底    1100: 红字
-;	mov al,'P'
-;	mov [gs:edi],ax ; 将SelectorVideo装到gs，并偏移edi
-;	jmp $
+PagingDemo:
+	mov ax, cs
+	mov ds, ax 
+	mov ax, SelectorFlatRW  
+	mov es, ax
+
+	; 将两个程序拷贝到对应的位置
+	push LenFoo
+	push OffsetFoo
+	push ProcFoo
+	call MemCpy
+	add esp, 12
+
+	push LenBar
+	push OffsetBar
+	push ProcBar
+	call MemCpy
+	add esp,12
+
+	; 程序入口，通过更改LinearAddrDemo更改ProcPagingDemo指向的程序
+	push LenPagingDemoAll
+	push OffsetPagingDemoProc
+	push ProcPagingDemo
+	call MemCpy
+	add esp, 12
+
+	mov ax, SelectorData 
+	mov ds,ax 
+	mov es,ax
+
+	call SetupPaging
+
+	call SelectorFlatC:ProcPagingDemo
+
+	call PSwitch
+	call SelectorFlatC:ProcPagingDemo
+	ret
+
+DispMemSize:
+	push esi 
+	push edi 
+	push ecx
+
+	mov esi, MemChkBuf
+	mov ecx, [dwMCRNumber]; for(int i=0;i<[MCRNumber];i++)//每次得到一个ARDS
+.loop:
+	mov edx, 5; for(int j=0;j<5;j++) //每次得到一个ARDS中的成员
+	mov edi, ARDStruct;{//依次显示BaseAddrLow,BaseAddrHigh,LengthLow,LengthHigh,Type
+.1:
+	push dword [esi]
+	call DispInt; 显示一个成员
+	pop eax  
+	stosd ;将eax的内容复制到es:edi，并将edi增加4个字节 // 为ARDS对应部位赋值
+	add esi, 4 
+	dec edx
+	cmp edx, 0
+	jnz .1
+	call DispReturn
+	cmp dword [dwType], 1 ;    if(BaseAddrLow + LengthLow > MemSize)，可被使用段
+	jne .2
+	mov eax, [dwBaseAddrLow]
+	add eax, [dwLengthLow]
+	cmp eax, [dwMemSize] ;    if(BaseAddrLow + LengthLow > MemSize)，获取最大可用内存处
+	jb .2
+	mov [dwMemSize],eax	 ;    MemSize = BaseAddrLow + LengthLow;
+.2:
+	loop .loop
+
+	call DispReturn
+	push szRAMSize
+	call DispStr
+	add esp, 4; 恢复push的堆栈
+
+	push dword [dwMemSize]
+	call DispInt
+	add esp, 4
+
+	pop ecx
+	pop edi 
+	pop esi 
+	ret
 
 SetupPaging:
-	mov ax, SelectorPageDir
+	xor edx, edx
+	mov eax, [dwMemSize]
+	mov ebx, 400000h ; 400000h = 4M = 4096 * 1024, 一个页表对应的内存大小
+	div ebx 
+	mov ecx, eax ; 此时 ecx 为页表的个数，也即 PDE 应该的个数
+	test edx, edx ; 看看是否有余数
+	jz .no_remainder
+	inc ecx
+.no_remainder:
+	; push ecx ; 页目录数
+	mov [PageTableNumber], ecx
+
+	; 首先初始化页目录
+	mov ax, SelectorFlatRW
 	mov es,ax 
-	mov ecx, 1024
-	xor edi,edi
+	; xor edi,edi
+	mov edi, PageDirBase0
 	xor eax,eax
-	mov eax, PageTblBase | PG_P |PG_USU | PG_RWW
+	mov eax, PageTblBase0 | PG_P |PG_USU | PG_RWW
 .1:
 	stosd ;将eax的内容复制到es:edi，并将edi增加4个字节
 	add eax, 4096
 	loop .1
 
-	mov ax, SelectorPageTbl  
-	mov es,ax 
-	mov ecx,1024*1024
-	xor edi,edi 
+	; 再初始化所有页表
+	; mov ax, SelectorPageTbl  
+	; mov es,ax 
+	; pop eax; 将刚push的ecx pop到eax
+	mov eax, [PageTableNumber]
+	mov ebx, 1024; 每页1024个PTE
+	mul ebx; PDE * PTE = PTE总数
+	mov ecx,eax
+	; xor edi,edi 
+	mov edi, PageTblBase0
 	xor eax, eax  
 	mov eax, PG_P | PG_USU | PG_RWW ; 从物理地址0000:0000h开始
+
 .2:
 	stosd  
 	add eax,4096
 	loop .2
 
-	mov eax, PageDirBase
+	mov eax, PageDirBase0
 	mov cr3, eax; 将页目录首地址放到cr3，以后会自动从这里寻址
 	mov eax, cr0
 	or	eax, 80000000h
@@ -430,7 +543,86 @@ SetupPaging:
 	nop
 	ret
 
+PSwitch:
+	; 首先初始化页目录
+	mov ax, SelectorFlatRW
+	mov es,ax 
+	mov edi, PageDirBase1
+	xor eax,eax
+	mov eax, PageTblBase1 | PG_P |PG_USU | PG_RWW
+	mov ecx, [PageTableNumber]
+.1:
+	stosd ;将eax的内容复制到es:edi，并将edi增加4个字节
+	add eax, 4096
+	loop .1
 
+	mov eax, [PageTableNumber]
+	mov ebx, 1024; 每页1024个PTE
+	mul ebx; PDE * PTE = PTE总数
+	mov ecx,eax
+	; xor edi,edi 
+	mov edi, PageTblBase1
+	xor eax, eax  
+	mov eax, PG_P | PG_USU | PG_RWW ; 从物理地址0000:0000h开始
+
+.2:
+	stosd  
+	add eax,4096
+	loop .2
+
+	; 将LinearAddrDemo线性地址重新映射到新页表里
+	mov eax, LinearAddrDemo
+	shr eax, 22; 页目录，31-22位
+	mov ebx, 4096; 每页偏移4096
+	mul ebx
+	mov ecx, eax
+	mov eax, LinearAddrDemo
+	shr eax, 12; 页表，21-12位
+	and eax, 03FFh
+	mov ebx, 4; 每页占4个字节
+	mul ebx 
+	add eax, ecx ; 准确的偏移地址
+	add eax, PageTblBase1; 页表起始地址+偏移=找到对应页
+	mov dword [es:eax], ProcBar | PG_P | PG_USU | PG_RWW; 在相同的线性地址对应的页上装入ProcBar
+
+	mov eax, PageDirBase1
+	mov cr3, eax; 将页目录首地址放到cr3，以后会自动从这里寻址
+	jmp short .3
+.3:
+	nop
+	ret
+
+PagingDemoProc:
+OffsetPagingDemoProc equ PagingDemoProc - $$
+	mov eax, LinearAddrDemo ; 通过线性地址调用程序
+	call eax 
+	retf
+LenPagingDemoAll equ $ - PagingDemoProc
+
+foo:
+OffsetFoo		equ	foo - $$
+	mov	ah, 0Ch			; 0000: 黑底    1100: 红字
+	mov	al, 'F'
+	mov	[gs:((80 * 17 + 0) * 2)], ax	; 屏幕第 17 行, 第 0 列。
+	mov	al, 'o'
+	mov	[gs:((80 * 17 + 1) * 2)], ax	; 屏幕第 17 行, 第 1 列。
+	mov	[gs:((80 * 17 + 2) * 2)], ax	; 屏幕第 17 行, 第 2 列。
+	ret
+LenFoo			equ	$ - foo
+
+bar:
+OffsetBar		equ	bar - $$
+	mov	ah, 0Ch			; 0000: 黑底    1100: 红字
+	mov	al, 'B'
+	mov	[gs:((80 * 18 + 0) * 2)], ax	; 屏幕第 18 行, 第 0 列。
+	mov	al, 'a'
+	mov	[gs:((80 * 18 + 1) * 2)], ax	; 屏幕第 18 行, 第 1 列。
+	mov	al, 'r'
+	mov	[gs:((80 * 18 + 2) * 2)], ax	; 屏幕第 18 行, 第 2 列。
+	ret
+LenBar			equ	$ - bar
+
+%include "lib.inc"
 SegCode32Len equ $ - LABEL_SEG_CODE32
 
 [SECTION .sdest]
@@ -439,7 +631,7 @@ LABEL_SEG_CODE_DEST:
     mov ax, SelectorVideo
     mov gs, ax
     
-    mov edi,(80*11+0)*2
+    mov edi,(80*1+0)*2
     mov ah,0ch
     mov al, 'C'
     mov [gs:edi], ax
@@ -489,7 +681,7 @@ LABEL_CODE_A:
 	mov ax, SelectorVideo  
 	mov gs, ax
 
-	mov edi, (80 *12+0)*2
+	mov edi, (80 *2+0)*2
 	mov ah,0ch
 	mov al, 'L'
 	mov [gs:edi],ax 
@@ -504,7 +696,7 @@ LABEL_CODE_RING3:
 	mov ax, SelectorVideo  
 	mov gs, ax
 
-	mov edi, (80 *14+0)*2
+	mov edi, (80 *4+0)*2
 	mov ah,0ch
 	mov al, '3'
 	mov [gs:edi],ax 
