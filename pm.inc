@@ -170,7 +170,7 @@ SA_TIL		EQU	4	; ┛
 ; usage: Gate Selector, Offset, DCount, Attr
 ;        Selector:  dw
 ;        Offset:    dd
-;        DCount:    db
+;        DCount:    db 参数数量 param count
 ;        Attr:      db
 %macro Gate 4
 	dw	(%2 & 0FFFFh)				; 偏移1

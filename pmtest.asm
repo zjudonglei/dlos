@@ -90,6 +90,9 @@ _ARDStruct:
 	_dwLengthHigh: dd 0
 	_dwType: dd 0
 _PageTableNumber dd 0
+_SavedIDTR:		dd 0; 用于保存IDTR，实模式下的中断恢复
+			dd 0
+_SavedIMREG:	dd 0;中断屏蔽寄存器值
 
 _MemChkBuf: times 256 db 0
 
@@ -110,6 +113,8 @@ ARDStruct equ _ARDStruct - $$
 	dwLengthHigh equ _dwLengthHigh - $$
 	dwType equ _dwType - $$
 PageTableNumber equ _PageTableNumber -$$
+SavedIDTR equ _SavedIDTR -$$
+SavedIMREG equ _SavedIMREG -$$
 MemChkBuf equ _MemChkBuf - $$
 	
 	StrTest: db "ABCDEFGHIJKLMNOPQRSTUVWXYZ",0
@@ -164,9 +169,28 @@ LABEL_TSS:
 	DD 0; LDT
 	DW 0; 调试陷进标志
 	DW $-LABEL_TSS+2; I/O位图基址
+	; 在此处定义I/O位图
 	DB 0ffh; I/O位图结束标志
 TSSLen equ $ - LABEL_TSS
 
+[SECTION .idt]
+ALIGN 32
+[BITS 32]
+LABEL_IDT:
+;	门 		选择子		偏移				参数数量		属性
+%rep 32 ; 预处理指令，重复32次
+	Gate SelectorCode32, SpuriousHandler, 0, DA_386IGate
+%endrep
+.020h:	Gate SelectorCode32, ClockHandler, 0, DA_386IGate
+%rep 95
+	Gate SelectorCode32, SpuriousHandler, 0, DA_386IGate
+%endrep
+.080h:	Gate SelectorCode32, UserIntHandler, 0, DA_386IGate
+.081h:	Gate SelectorCode32, UserIntHandler2, 0, DA_386IGate
+
+IdtLen	equ $ - LABEL_IDT
+IdtPtr 	dw IdtLen - 1; 类似GdtPtr
+	dd 0
 
 [SECTION .s16] ;将下面代码装到16位的段里
 [BITS 16] ;16位编译模式
@@ -318,9 +342,22 @@ LABEL_MEM_CHK_OK:
 	add eax,LABEL_GDT;左移四位，相当于乘以16，实模式下计算物理地址
 	mov dword [GdtPtr+2],eax;GdtPtr低2位是界限，高4位是基址，参见GdtPtr定义dd 0，界限已经有定义，对应gdtr寄存器
 
+	; 为加载IDTR做准备
+	xor eax,eax
+	mov ax,ds
+	shl eax,4
+	add eax,LABEL_IDT
+	mov dword [IdtPtr+2],eax
+
+	sidt [_SavedIDTR]; 保存IDTR，用于回到实模式的恢复
+
+	in al, 21h 
+	mov [_SavedIMREG], al; 保存屏蔽信息
+
 	lgdt [GdtPtr];将GdtPtr加载gdtr寄存器
 
-	cli ; 关中断，32位下中断模式有变
+	; cli ; 清理IF位，关中断，32位下中断模式有变
+	lidt [IdtPtr];加载idtr
 
 	in al,92h ; 打开A20地址线，开启32位模式，没找到各个端口的定义，抱歉
 	or al,00000010b
@@ -347,6 +384,11 @@ LABEL_REAL_ENTRY:
 	mov es,ax 
 	mov ss,ax 
 	mov sp,[_wSPValueInRealMode]
+
+	lidt [_SavedIDTR] ; 恢复IDTR
+	mov al, [_SavedIMREG]
+	out 21h, al
+
 	in al,92h
 	and al,11111101b
 	out 92h,al
@@ -371,6 +413,13 @@ LABEL_SEG_CODE32:
 	mov ss,ax
 	mov esp,TopOfStack
 
+	call Init8259A
+
+	int 080h
+	; sti ;测了一下不加也没事，但是在更改ss和sp的时候必须先关再开，不然保存一半堆栈的时候去处理中断，回来就回不来了
+	int 081h
+	jmp $
+
 	push szPMMessage ;入栈
 	call DispStr
 	add esp, 4; 恢复栈
@@ -378,11 +427,12 @@ LABEL_SEG_CODE32:
 	push szMemChkTitle 
 	call DispStr
 	add esp, 4
-
 	
 	call DispMemSize
 
 	call PagingDemo
+
+	call SetRealmode8259A
 
 	; call SetupPaging ; 先注释掉这行获取当前内存大小，然后更改LABEL_DESC_PAGE_TBL界限大小，
 	; ;所以为什么不在16位的地方直接更改界限大小？
@@ -407,6 +457,105 @@ LABEL_SEG_CODE32:
 	; call TestWrite
 	; call TestRead
 	; jmp SelectorCode16:0 ;回到16位
+
+Init8259A:
+	mov al, 011h
+	out 020h, al;主，ICW1
+	call io_delay
+
+	out 0A0h, al; 从，ICW1
+	call io_delay
+
+	mov al, 020h ; 主板第一个中断口，IRQ0对应的中断向量0x20
+	out 021h, al; 主，ICW2
+	call io_delay
+
+	mov al, 028h; 从板第一个中断口，IRQ8对应的中断向量0x28
+	out 0A1h, al; 从，ICW2
+	call io_delay
+
+	mov al, 004h; 主板IR2号口连接的从板，00000100h
+	out 021h, al 
+	call io_delay; 主，ICW3
+
+	mov al, 002h 
+	out 0A1h, al; 从板连接的是主板IR2号口
+	call io_delay; 从，ICW3
+
+	mov al, 001h;8259型号 
+	out 021h, al 
+	call io_delay; 主，ICW4
+
+	out 0A1h,al 
+	call io_delay; 从，ICW4
+
+	mov al, 11111110b; 开启0号时钟中断，1号是键盘，12号是鼠标
+	out 021h, al 
+	call io_delay
+
+	mov al, 11111111b; 屏蔽从板所有中断
+	out 0A1h, al 
+	call io_delay
+
+	ret
+
+SetRealmode8259A:
+	mov ax, SelectorData 
+	mov fs, ax 
+
+	mov al, 017h; 主ICW1，00011111，20端口开启设定模式
+	out 020h, al 
+	call io_delay
+
+	mov al, 008h ; IR0对应0x8
+	out 021h, al; 主ICW2
+	call io_delay
+
+	mov al, 001h 
+	out 021h, al; 主ICW4
+	call io_delay
+
+	mov al, [fs:SavedIMREG]
+	out 21h, al 
+	call io_delay
+
+	ret
+
+io_delay:
+	nop 
+	nop 
+	nop 
+	nop
+	ret
+
+_ClockHandler:
+ClockHandler equ _ClockHandler - $$
+	inc byte [gs:((80*0+70)*2)]
+	mov al, 20h 
+	out 20h, al ; 外部中断需要发送EOI
+	iretd; 中断的返回指令
+
+_UserIntHandler:
+UserIntHandler equ _UserIntHandler - $$
+	mov ah, 0Ch; 黑底，红字
+	mov al, 'I'
+	mov [gs:((80*0 +65) * 2)], ax 
+	iretd
+
+_UserIntHandler2:
+UserIntHandler2 equ _UserIntHandler2 - $$
+	mov ah, 0Ch; 黑底，红字
+	mov al, '2'
+	mov [gs:((80*0 +60) * 2)], ax 
+	iretd
+
+_SpuriousHandler:
+SpuriousHandler equ _SpuriousHandler - $$
+	mov ah, 0ch
+	mov al, '!'
+	mov [gs:((80*0 + 75) * 2)], ax 
+	jmp $
+	iretd
 
 PagingDemo:
 	mov ax, cs

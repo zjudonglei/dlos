@@ -31,6 +31,7 @@ DispAL:
 .2:
 
 	mov [gs:edi],ax;显示
+		; jmp SelectorCode16:0
 	add edi,2
 	mov al,dl  ;开始低4位
 	loop .begin
