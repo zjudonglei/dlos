@@ -1,0 +1,54 @@
+;https://blog.csdn.net/zmmycsdn/article/details/78511948
+
+JCXZ ;CX 为 0 则跳转
+JECXZ;ECX 为 0 则跳转
+
+JE   ;等于则跳转			同JZ
+JNE  ;不等于则跳转		同JNZ
+
+JA   ;无符号大于则跳转
+JNA  ;无符号不大于则跳转
+JAE  ;无符号大于等于则跳转		同JNB
+JNAE ;无符号不大于等于则跳转	同JB
+
+JB   ;无符号小于则跳转
+JNB  ;无符号不小于则跳转
+JBE  ;无符号小于等于则跳转		同JNA
+JNBE ;无符号不小于等于则跳转	同JA
+
+JG   ;有符号大于则跳转
+JNG  ;有符号不大于则跳转
+JGE  ;有符号大于等于则跳转		同JNL
+JNGE ;有符号不大于等于则跳转	同JL
+
+JL   ;有符号小于则跳转
+JNL  ;有符号不小于则跳转
+JLE  ;有符号小于等于则跳转		同JNG
+JNLE ;有符号不小于等于则跳转	同JG
+
+JZ   ;为零则跳转
+JNZ  ;不为零则跳转
+
+JS   ;为负则跳转
+JNS  ;不为负则跳转
+
+JC   ;进位则跳转
+JNC  ;不进位则跳转
+
+JO   ;溢出则跳转
+JNO  ;不溢出则跳转
+
+JP
+;为偶则跳转
+
+JNP  ;不为偶则跳转
+
+JPE  ;奇偶位置位则跳转		同JP
+
+JPO  ;奇偶位复位则跳转		同JNPs
+
+
+PSW标志位:
+11		10		9		8		7		6	5		4		3		2		1		0
+OF		DF		IF		TF		SF		ZF			AF	 	PF	 	CF
+溢出		方向		中断		陷阱		符号		零	未用		辅助		未用		奇偶		未用		进位
