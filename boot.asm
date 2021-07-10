@@ -11,38 +11,14 @@ BaseOfStack equ 0100h
 BaseOfStack equ 07c00h
 %endif
 
-BaseOfLoader equ 09000h ; loader.bin被加载的段
-OffsetOfLoader equ 0100h ; 偏移
-RootDirSectors equ 14 ; 根目录占的扇区数
-SectorNoOfRootDirectory equ 19 ; 根目录起始扇区数
-SectorNoOfFAT1 equ 1
-DeltaSectorNo equ 17
+%include "load.inc"
 
 	jmp short LABEL_START
 	nop ; 必不可少，.img文件开头的EB 3C 90，第3个字节，删除的话就少了90
 
-	; 按照FAT12格式化软盘，便于DOS识别
-	BS_OEMName DB 'XIXIHAHA' ; 启动区的名字，必须8字节
-	BPB_BytsPerSec DW 512 ; 每扇区字节数
-	BPB_SecPerClus DB 1; 每簇多少扇区
-	BPB_RsvdSecCnt DW 1; FAT起始位置
-	BPB_NumFATs DB 2; 共有多少FAT表
-	BPB_RootEntCnt DW 224 ; 根目录文件数最大值
-	BPB_TotSec16 DW 2880 ; 逻辑扇区总数，18*80*2
-	BPB_Media DB 0xF0 ; 磁盘种类
-	BPB_FATSz16 DW 9 ; 每个FAT的扇区数
-	BPB_SecPerTrk DW 18 ; 每圈磁道扇区数
-	BPB_NumHeads DW 2 ; 磁头数
-	BPB_HiddSec DD 0 ; 隐藏扇区数
-	BPB_TotSec32 DD 0; wTotalSectorCount为0时这个值记录扇区数
-	BS_DrvNum DB 0; 中断13的驱动器号
-	BS_Reserved1 DB 0; 未使用
-	BS_BootSig DB 29h ; 扩展引导标记
-	BS_VolID DD 0; 卷序列号
-	BS_VolLab DB 'JuanBiaoBei' ; 卷标呗，必须11字节
-	BS_FileSysType DB 'FAT12   ' ; 文件系统类型，必须8字节
+%include "fat12hdr.inc"
 
-LABEL_START
+LABEL_START:
 ; 小程序中 (<64K), 代码段和数据段放在一个段里
 	mov ax,cs
 	mov ds,ax
@@ -164,9 +140,9 @@ LABEL_FILE_LOADED:
 	; jmp $ ; 跳转到当前地址，死循环，不如halt指令
 
 wRootDirSizeForLoop dw RootDirSectors; 14
-
 wSectorNo dw 0; 会初始化到19
 bOdd db 0; 奇偶数
+
 LoaderFileName db "LOADER  BIN", 0
 MessageLength equ 9 
 BootMessage:	db "Booting  " ; 9个字节
