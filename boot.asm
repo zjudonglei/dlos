@@ -19,7 +19,7 @@ SectorNoOfFAT1 equ 1
 DeltaSectorNo equ 17
 
 	jmp short LABEL_START
-	nop ; 必不可少
+	nop ; 必不可少，.img文件开头的EB 3C 90，第3个字节，删除的话就少了90
 
 	; 按照FAT12格式化软盘，便于DOS识别
 	BS_OEMName DB 'XIXIHAHA' ; 启动区的名字，必须8字节
@@ -122,7 +122,7 @@ LABEL_NO_LOADERBIN:
 LABEL_FILENAME_FOUND:
 	mov ax, RootDirSectors
 	and di, 0FFE0h; 当前根节点起始位置
-	and di, 01Ah; sector标记开始的地方，详见根节点结构
+	add di, 01Ah; sector标记开始的地方，详见根节点结构，出现了个大大的问题，我的根节点
 	mov cx, word[es:di] ; es:BaseOfLoader，初始的FAT节点
 
 	push cx
@@ -135,10 +135,10 @@ LABEL_FILENAME_FOUND:
 LABEL_GOON_LOADING_FILE:
 	push ax
 	push bx  
-	; mov ah, 0Eh ;每读一个扇区就在 "Booting  " 后面
-	; mov al, '.';打一个点, 形成这样的效果:
-	; mov bl, 0Fh;Booting ......
-	; int 10h
+	mov ah, 0Eh ;每读一个扇区就在 "Booting  " 后面
+	mov al, '.';打一个点, 形成这样的效果:
+	mov bl, 0Fh;Booting ......
+	int 10h
 	pop bx
 	pop ax
 
@@ -186,7 +186,8 @@ DispStr:
 
 	mov ax, 01301h ; AH 中断入口
 	mov bx, 000ch ; BH 页号，AL为1时BL表示属性
-	mov dx, 0102h ; DH DL 起始行列
+	; mov dx, 0102h ; DH DL 起始行列
+	mov dl, 0
 	int 10h
 	ret
 
