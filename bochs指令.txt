@@ -1,0 +1,34 @@
+https://blog.csdn.net/acmilanvanbasten/article/details/38852173
+
+指令 	作用				示例
+b addr	在该处加断点		b 0x7c00
+c		跳到下个断点	
+n		单步
+s		单步，并进入子方法
+d		删除断点（断点序号）	d 1
+info break	查看有哪些断点
+info cpu	查看cpu所有寄存器
+r		通用寄存器
+fp		浮点运算器
+sreg	段寄存器
+creg	控制寄存器
+print-stack	查看堆栈
+xp /nuf addr	查看内存物理地址内容	xp /40bx 0x9013e
+x /nuf addr		查看线性地址内容 		x /40bx 0x13e;x /32xb es:di -16;x /13xcb -11
+	n：显示的单元数
+	u：每个显示单元的大小
+		b	BYTE
+		h	WORD
+		w	DWORD
+		g	DWORD64
+	f：显示格式
+		x	按照十六进制显示
+		d	十进制显示
+		u	按照无符号十进制显示
+		o	按照八进制显示
+		t	按照二进制显示
+		c	按照字符显示
+
+u start end		反汇编一段内存		u 0x30400 0x3040D; u /45（接下来的45条）
+trace on（或者off）		反汇编执行的每一条指令
+trace-reg on（或者off 	每执行一条指令就打印CPU信息
