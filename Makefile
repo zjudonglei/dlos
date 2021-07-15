@@ -25,7 +25,9 @@ DASMFLAGS	= -u -o $(ENTRYPOINT) -e $(ENTRYOFFSET)
 # This Program
 ORANGESBOOT	= boot/boot.bin boot/loader.bin
 ORANGESKERNEL	= kernel.bin
-OBJS		= kernel/kernel.o kernel/start.o kernel/i8259.o kernel/global.o kernel/protect.o lib/klib.o lib/kliba.o lib/string.o
+OBJS		= kernel/kernel.o kernel/start.o kernel/main.o kernel/clock.o kernel/i8259.o \
+			kernel/global.o kernel/protect.o lib/klib.o \
+			lib/kliba.o lib/string.o
 DASMOUTPUT	= kernel.bin.asm
 
 # All Phony Targets
@@ -67,22 +69,33 @@ boot/loader.bin : boot/loader.asm boot/include/load.inc \
 $(ORANGESKERNEL) : $(OBJS)
 	$(LD) $(LDFLAGS) -o $(ORANGESKERNEL) $(OBJS)
 
-kernel/kernel.o : kernel/kernel.asm
+kernel/kernel.o : kernel/kernel.asm include/sconst.inc
 	$(ASM) $(ASMKFLAGS) -o $@ $<
 
-kernel/start.o : kernel/start.c include/type.h include/const.h include/protect.h include/proto.h include/string.h
+kernel/start.o : kernel/start.c include/type.h include/const.h include/protect.h \
+	include/proto.h include/string.h include/proc.h
+	$(CC) $(CFLAGS) -o $@ $<
+
+kernel/main.o : kernel/main.c include/type.h include/const.h include/protect.h \
+	include/proto.h include/string.h include/proc.h
+	$(CC) $(CFLAGS) -o $@ $<
+
+kernel/clock.o: kernel/clock.c  
 	$(CC) $(CFLAGS) -o $@ $<
 
 kernel/i8259.o : kernel/i8259.c include/type.h include/const.h include/protect.h include/proto.h
 	$(CC) $(CFLAGS) -o $@ $<
 
-kernel/global.o : kernel/global.c
+kernel/global.o : kernel/global.c include/type.h include/const.h include/protect.h \
+	include/proc.h include/global.h include/proto.h
 	$(CC) $(CFLAGS) -o $@ $<
 
-kernel/protect.o : kernel/protect.c
+kernel/protect.o : kernel/protect.c include/type.h include/protect.h \
+	include/proc.h include/global.h include/proto.h include/string.h
 	$(CC) $(CFLAGS) -o $@ $<
 
-kernel/klib.o : kernel/klib.c
+kernel/klib.o : kernel/klib.c include/type.h include/const.h include/protect.h \
+	include/proc.h include/global.h include/proto.h include/string.h
 	$(CC) $(CFLAGS) -o $@ $<
 
 lib/kliba.o : lib/kliba.asm

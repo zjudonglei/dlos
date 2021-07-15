@@ -1,15 +1,26 @@
-SELECTOR_KERNEL_CS equ 8 ; 如果这个选择子表示的是offset，那么8表示的就是距离LABEL_GDT偏移8的选择子，就是SelectorFlatC
-; 参见protect.h验证了本猜想
+%include "sconst.inc"
 
 ; 导入函数
 extern cstart
+extern kernel_main
 extern exception_handler
 extern spurious_irq
+extern clock_handler
+extern disp_str
+extern delay
 
 ; 导入全局变量
 extern gdt_ptr
 extern idt_ptr
+extern p_proc_ready
+extern tss
 extern disp_pos
+extern k_reenter
+
+bits 32
+
+[SECTION .data]
+clock_int_msg db "^",0
 
 [section .bss]; 保护模式下堆栈
 StackSpace resb 2 * 1024
@@ -17,6 +28,8 @@ StackTop:
 
 [section .text]
 global _start
+
+global restart
 
 global divide_error;
 global single_step_exception;
@@ -67,8 +80,14 @@ _start:
 csinit:
 	; ud2
 	; jmp 0x40:0
-	sti
-	hlt
+	; sti
+	; hlt
+
+	xor eax, eax 
+	mov ax, SELECTOR_TSS
+	ltr ax
+
+	jmp kernel_main
 
 %macro hwint_master 1 
 	push %1
@@ -79,7 +98,61 @@ csinit:
 
 ALIGN 16
 hwint00:
-	hwint_master 0
+; 对应proc.h
+	; eflags
+	; cs
+	; eip
+	sub esp, 4 ; retaddr
+
+	pushad 
+	push ds 
+	push es 
+	push fs 
+	push gs 
+	mov dx, ss  
+	mov ds, dx
+	mov es, dx
+
+	inc byte [gs:0]
+	mov al, EOI
+	out INT_M_CTL, al
+
+	inc dword [k_reenter]
+	cmp dword [k_reenter], 0 
+	jne .re_enter
+
+	mov esp, StackTop ; 内核栈
+
+	sti
+
+	push 0
+	call clock_handler
+	add esp,4
+	; push clock_int_msg
+	; call disp_str
+	; add esp, 4
+
+	; push 1
+	; call delay
+	; add esp,4
+
+	cli
+
+	mov esp, [p_proc_ready] ; 任务表起点
+
+	lea eax, [esp + P_STACKTOP]
+	mov dword [tss+TSS3_S_SP0], eax
+
+.re_enter
+	dec dword [k_reenter]
+	pop gs 
+	pop fs
+	pop es 
+	pop ds
+	popad
+	add esp, 4
+
+	iretd
 
 ALIGN 16
 hwint01:
@@ -211,3 +284,22 @@ exception:
 	call exception_handler
 	add esp, 4*2 ;堆栈中从顶向下依次是：EIP、CS、EFLAGS
 	hlt
+
+
+restart:
+	mov esp, [p_proc_ready] ; 这个是低地址，所以是栈顶
+	lldt [esp + P_LDT_SEL] ; 加载ldt
+	lea eax, [esp + P_STACKTOP] ; 这个是高地址，指向栈底，下一次中断发生时，将从此处开始压栈
+	mov dword [tss + TSS3_S_SP0], eax ; 设置tss 级别0堆栈
+
+	pop gs
+	push gs
+	pop gs
+	pop fs
+	pop es 
+	pop ds  
+	popad
+
+	add esp, 4
+
+	iretd
