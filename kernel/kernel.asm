@@ -20,7 +20,9 @@ extern k_reenter
 bits 32
 
 [SECTION .data]
-clock_int_msg db "^",0
+clock_int_msg db "^ ",0
+clock_int_msg2 db " dec0 ",0
+clock_int_msg3 db " dec1 ",0
 
 [section .bss]; 保护模式下堆栈
 StackSpace resb 2 * 1024
@@ -115,28 +117,38 @@ hwint00:
 
 	inc byte [gs:0]
 	mov al, EOI
-	out INT_M_CTL, al
+	out INT_M_CTL, al ; 恢复外部中断
 
 	inc dword [k_reenter]
-	cmp dword [k_reenter], 0 
-	jne .re_enter
+	cmp dword [k_reenter], 0
+	jne .re_enter 
 
+	; 从这里开始后面的代码每次调度会切换一个任务，并执行
 	mov esp, StackTop ; 内核栈
 
-	sti
+	; push 100 ; 假如这里有延迟，任务调度会完成
+	; call delay
+	; add esp,4
 
-	push 0
-	call clock_handler
-	add esp,4
+	sti ; 允许中断，但是新的中断在cmp k_reenter那里就会跳走了
+
 	; push clock_int_msg
 	; call disp_str
 	; add esp, 4
 
-	; push 1
+	; push 500 ; 假如这里有延迟，任务调度会完成
 	; call delay
 	; add esp,4
 
-	cli
+	push 0
+	call clock_handler
+	add esp,4
+
+	cli ; 关闭了中断，执行到这里就不会再有中断进来，保证调度一定会完成
+
+	; push 1 ; 假如这里有延迟，新任务不会执行，立刻进入新的中断
+	; call delay
+	; add esp,4
 
 	mov esp, [p_proc_ready] ; 任务表起点
 
