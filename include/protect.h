@@ -133,8 +133,12 @@ typedef struct s_tss {
 // 外部中断
 #define INT_VECTOR_IRQ0 0x20 // IRQ0对应中断
 #define INT_VECTOR_IRQ8 0x28 // IRQ8对应中断
+// 系统调用
+#define INT_VECTOR_SYS_CALL 0x90
 
 // 线性地址->物理地址
 #define vir2phys(seg_base, vir) (u32)(((u32)seg_base) + (u32)(vir))
+
+PUBLIC void init_descriptor(DESCRIPTOR* p_desc, u32 base, u32 limit, u16 attribute);
 
 #endif // !_PROTECT_H_

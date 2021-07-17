@@ -8,6 +8,7 @@ extern spurious_irq
 extern clock_handler
 extern disp_str
 extern delay
+extern irq_table
 
 ; 导入全局变量
 extern gdt_ptr
@@ -16,13 +17,12 @@ extern p_proc_ready
 extern tss
 extern disp_pos
 extern k_reenter
+extern sys_call_table
 
 bits 32
 
 [SECTION .data]
 clock_int_msg db "^ ",0
-clock_int_msg2 db " dec0 ",0
-clock_int_msg3 db " dec1 ",0
 
 [section .bss]; 保护模式下堆栈
 StackSpace resb 2 * 1024
@@ -32,6 +32,7 @@ StackTop:
 global _start
 
 global restart
+global sys_call
 
 global divide_error;
 global single_step_exception;
@@ -92,79 +93,33 @@ csinit:
 	jmp kernel_main
 
 %macro hwint_master 1 
+	call save
+
+	; 关闭时钟中断
+	in al, INT_M_CTLMASK
+	or al, (1 << %1) 
+	out INT_M_CTLMASK, al
+
+	mov al, EOI
+	out INT_M_CTL, al ; 恢复外部中断
+
+	sti
 	push %1
-	call spurious_irq
-	add esp, 4
-	hlt
+	call [irq_table + 4 * %1]
+	pop ecx
+	cli
+
+	; 打开时钟中断
+	in al, INT_M_CTLMASK
+	and al, ~(1 << %1) 
+	out INT_M_CTLMASK, al
+
+	ret ; call=push eip + ret，1 push了restart_reenter的地址，2 push了restart的地址
 %endmacro
 
 ALIGN 16
 hwint00:
-; 对应proc.h
-	; eflags
-	; cs
-	; eip
-	sub esp, 4 ; retaddr
-
-	pushad 
-	push ds 
-	push es 
-	push fs 
-	push gs 
-	mov dx, ss  
-	mov ds, dx
-	mov es, dx
-
-	inc byte [gs:0]
-	mov al, EOI
-	out INT_M_CTL, al ; 恢复外部中断
-
-	inc dword [k_reenter]
-	cmp dword [k_reenter], 0
-	jne .re_enter 
-
-	; 从这里开始后面的代码每次调度会切换一个任务，并执行
-	mov esp, StackTop ; 内核栈
-
-	; push 100 ; 假如这里有延迟，任务调度会完成
-	; call delay
-	; add esp,4
-
-	sti ; 允许中断，但是新的中断在cmp k_reenter那里就会跳走了
-
-	; push clock_int_msg
-	; call disp_str
-	; add esp, 4
-
-	; push 500 ; 假如这里有延迟，任务调度会完成
-	; call delay
-	; add esp,4
-
-	push 0
-	call clock_handler
-	add esp,4
-
-	cli ; 关闭了中断，执行到这里就不会再有中断进来，保证调度一定会完成
-
-	; push 1 ; 假如这里有延迟，新任务不会执行，立刻进入新的中断
-	; call delay
-	; add esp,4
-
-	mov esp, [p_proc_ready] ; 任务表起点
-
-	lea eax, [esp + P_STACKTOP]
-	mov dword [tss+TSS3_S_SP0], eax
-
-.re_enter
-	dec dword [k_reenter]
-	pop gs 
-	pop fs
-	pop es 
-	pop ds
-	popad
-	add esp, 4
-
-	iretd
+	hwint_master 0
 
 ALIGN 16
 hwint01:
@@ -297,15 +252,50 @@ exception:
 	add esp, 4*2 ;堆栈中从顶向下依次是：EIP、CS、EFLAGS
 	hlt
 
+save:
+	; 在每次restart的时候esp设置成了当前进程的进程表起始地址[esp + P_STACKTOP]
+	; 中断发生的时候会装入 ss esp eflags cs eip
+	; call save的时候会装入save下条指令的地址retaddr
+
+	pushad 
+	push ds 
+	push es 
+	push fs 
+	push gs ; 到这里为止位于栈顶了
+	mov dx, ss  
+	mov ds, dx
+	mov es, dx
+
+	mov esi, esp ; 栈顶就是s_stackframe的起始地址
+
+	inc dword [k_reenter]
+	cmp dword [k_reenter], 0
+	jne .1
+	mov esp, StackTop ; 内核栈
+	push restart
+	jmp [esi + RETADR - P_STACKBASE] ; 由于栈发生了切换，并且pop了寄存器，所以直接找到返回地址返回，不用ret返回
+.1:
+	push restart_reenter
+	jmp [esi + RETADR - P_STACKBASE]
+
+sys_call:
+	call save
+	sti
+
+	call [sys_call_table + 4 * eax] ; 返回值int存放在eax中
+	mov [esi + EAXREG - P_STACKBASE],eax
+
+	cli
+	ret ;
 
 restart:
 	mov esp, [p_proc_ready] ; 这个是低地址，所以是栈顶
 	lldt [esp + P_LDT_SEL] ; 加载ldt
 	lea eax, [esp + P_STACKTOP] ; 这个是高地址，指向栈底，下一次中断发生时，将从此处开始压栈
-	mov dword [tss + TSS3_S_SP0], eax ; 设置tss 级别0堆栈
-
-	pop gs
-	push gs
+	mov dword [tss + TSS3_S_SP0], eax ; 中断运行在内核级0级，当中断发生时，将会把ss等信息压到sp0中的堆栈
+	; ，iret返回时也会将sp0指向的堆栈寄存器弹出
+restart_reenter:
+	dec dword[k_reenter]
 	pop gs
 	pop fs
 	pop es 

@@ -416,9 +416,9 @@ LABEL_SEG_CODE32:
 	call Init8259A
 
 	int 080h
-	; sti ;测了一下不加也没事，但是在更改ss和sp的时候必须先关再开，不然保存一半堆栈的时候去处理中断，回来就回不来了
+	sti ;测了一下不加也没事，但是在更改ss和sp的时候必须先关再开，不然保存一半堆栈的时候去处理中断，回来就回不来了
 	int 081h
-	jmp $
+	; jmp $
 
 	push szPMMessage ;入栈
 	call DispStr
@@ -850,6 +850,7 @@ LABEL_CODE_RING3:
 	mov al, '3'
 	mov [gs:edi],ax 
 
-	call SelectorCallGateTest:0 ; 通过调用门回到高特权级段
+	; call SelectorCallGateTest:0 ; 通过调用门回到高特权级段
+	call SelectorCodeDest:0
 	jmp $
 SegCodeRing3Len equ $ - LABEL_CODE_RING3
