@@ -1,8 +1,10 @@
 #include "type.h"
 #include "const.h"
 #include "protect.h"
-#include "proto.h"
+#include "tty.h"
+#include "console.h"
 #include "proc.h"
+#include "proto.h"
 #include "global.h"
 
 PUBLIC void init_8259A() {

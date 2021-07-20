@@ -22,7 +22,13 @@ extern sys_call_table
 bits 32
 
 [SECTION .data]
-clock_int_msg db "^ ",0
+global clock_int_msg
+clock_int_msg:
+	db 'This is msg from system. ',0x0
+
+global test_int
+testInt:
+	dd 12345
 
 [section .bss]; 保护模式下堆栈
 StackSpace resb 2 * 1024
@@ -280,10 +286,16 @@ save:
 
 sys_call:
 	call save
+
+	push dword [p_proc_ready] ; 刚刚发起中断的进程
 	sti
 
+	push ecx
+	push ebx
 	call [sys_call_table + 4 * eax] ; 返回值int存放在eax中
 	mov [esi + EAXREG - P_STACKBASE],eax
+
+	add esp, 4*3
 
 	cli
 	ret ;

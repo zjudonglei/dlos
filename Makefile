@@ -25,9 +25,11 @@ DASMFLAGS	= -u -o $(ENTRYPOINT) -e $(ENTRYOFFSET)
 # This Program
 ORANGESBOOT	= boot/boot.bin boot/loader.bin
 ORANGESKERNEL	= kernel.bin
-OBJS		= kernel/kernel.o kernel/syscall.o kernel/start.o kernel/main.o kernel/clock.o kernel/i8259.o \
-			kernel/global.o kernel/protect.o kernel/proc.o lib/klib.o \
-			lib/kliba.o lib/string.o
+OBJS		= kernel/kernel.o kernel/syscall.o kernel/start.o kernel/main.o \
+			kernel/clock.o kernel/keyboard.o kernel/tty.o kernel/console.o \
+			kernel/i8259.o kernel/global.o kernel/protect.o kernel/proc.o \
+			kernel/printf.o kernel/vsprintf.o \
+			lib/kliba.o lib/klib.o lib/string.o
 DASMOUTPUT	= kernel.bin.asm
 
 # All Phony Targets
@@ -75,7 +77,7 @@ kernel/syscall.o : kernel/syscall.asm include/sconst.inc
 	$(ASM) $(ASMKFLAGS) -o $@ $<
 
 kernel/start.o : kernel/start.c include/type.h include/const.h include/protect.h \
-	include/proto.h include/string.h include/proc.h
+	include/tty.h include/proto.h include/string.h include/proc.h
 	$(CC) $(CFLAGS) -o $@ $<
 
 kernel/main.o : kernel/main.c include/type.h include/const.h include/protect.h \
@@ -84,6 +86,16 @@ kernel/main.o : kernel/main.c include/type.h include/const.h include/protect.h \
 
 kernel/clock.o: kernel/clock.c  
 	$(CC) $(CFLAGS) -o $@ $<
+
+kernel/keyboard.o: kernel/keyboard.c  
+	$(CC) $(CFLAGS) -o $@ $<
+
+kernel/tty.o: kernel/tty.c  
+	$(CC) $(CFLAGS) -o $@ $<
+
+kernel/console.o: kernel/console.c  
+	$(CC) $(CFLAGS) -o $@ $<
+
 
 kernel/i8259.o : kernel/i8259.c include/type.h include/const.h include/protect.h include/proto.h
 	$(CC) $(CFLAGS) -o $@ $<
@@ -96,8 +108,13 @@ kernel/protect.o : kernel/protect.c include/type.h include/const.h include/prote
 	include/proc.h include/global.h include/proto.h
 	$(CC) $(CFLAGS) -o $@ $<
 
-kernel/proc.o : kernel/proc.c include/type.h include/const.h include/protect.h \
-	include/proto.h include/string.h include/proc.h include/global.h 
+kernel/proc.o : kernel/proc.c kernel/kernel.asm
+	$(CC) $(CFLAGS) -o $@ $<
+
+kernel/printf.o : kernel/printf.c
+	$(CC) $(CFLAGS) -o $@ $<
+
+kernel/vsprintf.o : kernel/vsprintf.c
 	$(CC) $(CFLAGS) -o $@ $<
 
 kernel/klib.o : kernel/klib.c include/type.h include/const.h include/protect.h include/string.h \

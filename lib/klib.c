@@ -1,9 +1,11 @@
 #include "type.h"
 #include "const.h"
 #include "protect.h"
+#include "tty.h"
+#include "proc.h"
+#include "console.h"
 #include "proto.h"
 #include "string.h"
-#include "proc.h"
 #include "global.h"
 
 PUBLIC char* itoa(char* str, int num)/* 数字前面的 0 不被显示出来, 比如 0000B800 被显示成 B800 */

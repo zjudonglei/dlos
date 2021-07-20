@@ -13,7 +13,7 @@ fp		浮点运算器
 sreg	段寄存器
 creg	控制寄存器
 print-stack	查看堆栈
-xp /nuf addr	查看内存物理地址内容	xp /40bx 0x9013e
+xp /nuf addr	查看内存物理地址内容	xp /40bx 0x9013e  
 x /nuf addr		查看线性地址内容 		x /40bx 0x13e;x /32xb es:di -16;x /13xcb -11
 	n：显示的单元数
 	u：每个显示单元的大小

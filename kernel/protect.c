@@ -1,14 +1,16 @@
 #include "type.h"
 #include "const.h"
 #include "protect.h"
-#include "proto.h"
+#include "tty.h"
 #include "proc.h"
+#include "console.h"
+#include "proto.h"
 #include "global.h"
 #include "string.h"
 
 PRIVATE void init_idt_desc(unsigned char vector, u8 desc_type,
 	int_handler handler, unsigned char privilege);
-//PRIVATE void init_descriptor(DESCRIPTOR* p_desc, u32 base, u32 limit, u16 attribute);
+PRIVATE void init_descriptor(DESCRIPTOR* p_desc, u32 base, u32 limit, u16 attribute);
 
 // 中断处理函数，定义在asm中
 void divide_error();
@@ -97,7 +99,7 @@ PUBLIC void init_prot() {
 	int i;
 	PROCESS* p_proc = proc_table;
 	u16 selector_ldt = INDEX_LDT_FIRST << 3;
-	for (i = 0; i < NR_TASKS; i++) {
+	for (i = 0; i < NR_TASKS + NR_PROCS; i++) {
 		init_descriptor(&gdt[selector_ldt >> 3],
 			vir2phys(seg2phys(SELECTOR_KERNEL_DS), proc_table[i].ldts),
 			LDT_SIZE * sizeof(DESCRIPTOR) - 1,

@@ -34,6 +34,25 @@
 #define TIMER_FREQ 1193182
 #define HZ 100
 
+// 键盘
+#define KB_DATA 0x60
+#define KB_CMD 0x64
+#define LED_CODE 0xED
+#define KB_ACK 0xFA
+
+// 显示器
+#define CRTC_ADDR_REG 0x3D4
+#define CRTC_DATA_REG 0x3D5
+#define START_ADDR_H 0xC
+#define START_ADDR_L 0xD
+#define CURSOR_H 0xE
+#define CURSOR_L 0xF
+#define V_MEM_BASE 0xB8000
+#define V_MEM_SIZE 0x8000
+
+// 控制台
+#define NR_CONSOLES 3
+
 // 硬件中断
 #define NR_IRQ 16
 #define CLOCK_IRQ 0
@@ -47,6 +66,6 @@
 #define PRINTER_IRQ 7
 #define AT_WINT_IRQ 14
 
-#define NR_SYS_CALL 1
+#define NR_SYS_CALL 3
 
 #endif // ! _CONST_H_
