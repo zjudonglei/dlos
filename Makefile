@@ -12,15 +12,17 @@ ENTRYOFFSET	=   0x400
 
 # Programs, flags, etc.
 ASM		= nasm
-DASM		= ndisasm
+DASM		= objdump
 CC		= gcc
 LD		= ld
 ASMBFLAGS	= -I boot/include/
 ASMKFLAGS	= -I include/ -f elf
 # 输入32位，如果你的linux是64位的话
-CFLAGS		= -I include/ -m32 -c -fno-builtin -fno-stack-protector
-LDFLAGS		= -m elf_i386 -s -Ttext $(ENTRYPOINT)
-DASMFLAGS	= -u -o $(ENTRYPOINT) -e $(ENTRYOFFSET)
+# CFLAGS		= -I include/ -m32 -c -fno-builtin -fno-stack-protector
+CFLAGS		= -I include/ -m32 -c -fno-builtin -fno-stack-protector -fpack-struct -Wall
+# LDFLAGS		= -m elf_i386 -s -Ttext $(ENTRYPOINT)
+LDFLAGS		= -m elf_i386 -Ttext $(ENTRYPOINT) -Map krnl.map
+DASMFLAGS	= -D
 
 # This Program
 ORANGESBOOT	= boot/boot.bin boot/loader.bin
@@ -28,12 +30,16 @@ ORANGESKERNEL	= kernel.bin
 OBJS		= kernel/kernel.o kernel/syscall.o kernel/start.o kernel/main.o \
 			kernel/clock.o kernel/keyboard.o kernel/tty.o kernel/console.o \
 			kernel/i8259.o kernel/global.o kernel/protect.o kernel/proc.o \
-			kernel/printf.o kernel/vsprintf.o \
-			lib/kliba.o lib/klib.o lib/string.o
+			kernel/systask.o kernel/printf.o kernel/vsprintf.o \
+			lib/kliba.o lib/klib.o lib/string.o lib/misc.o
 DASMOUTPUT	= kernel.bin.asm
 
 # All Phony Targets
 .PHONY : everything final image clean realclean disasm all buildimg
+
+# Default starting position
+nop :
+	@echo "why not \'make image\' huh? :)"
 
 # Default starting position
 everything : $(ORANGESBOOT) $(ORANGESKERNEL)
@@ -77,11 +83,11 @@ kernel/syscall.o : kernel/syscall.asm include/sconst.inc
 	$(ASM) $(ASMKFLAGS) -o $@ $<
 
 kernel/start.o : kernel/start.c include/type.h include/const.h include/protect.h \
-	include/tty.h include/proto.h include/string.h include/proc.h
+	include/string.h include/proc.h include/proto.h include/global.h
 	$(CC) $(CFLAGS) -o $@ $<
 
 kernel/main.o : kernel/main.c include/type.h include/const.h include/protect.h \
-	include/proto.h include/string.h include/proc.h include/global.h
+	include/string.h include/proc.h include/proto.h include/global.h
 	$(CC) $(CFLAGS) -o $@ $<
 
 kernel/clock.o: kernel/clock.c  
@@ -105,10 +111,10 @@ kernel/global.o : kernel/global.c include/type.h include/const.h include/protect
 	$(CC) $(CFLAGS) -o $@ $<
 
 kernel/protect.o : kernel/protect.c include/type.h include/const.h include/protect.h \
-	include/proc.h include/global.h include/proto.h
+	include/proc.h include/proto.h include/global.h
 	$(CC) $(CFLAGS) -o $@ $<
 
-kernel/proc.o : kernel/proc.c kernel/kernel.asm
+kernel/proc.o : kernel/proc.c
 	$(CC) $(CFLAGS) -o $@ $<
 
 kernel/printf.o : kernel/printf.c
@@ -117,8 +123,14 @@ kernel/printf.o : kernel/printf.c
 kernel/vsprintf.o : kernel/vsprintf.c
 	$(CC) $(CFLAGS) -o $@ $<
 
-kernel/klib.o : kernel/klib.c include/type.h include/const.h include/protect.h include/string.h \
+kernel/systask.o : kernel/systask.c
+	$(CC) $(CFLAGS) -o $@ $<
+
+lib/klib.o : lib/klib.c include/type.h include/const.h include/protect.h include/string.h \
 	include/proc.h include/proto.h include/global.h
+	$(CC) $(CFLAGS) -o $@ $<
+
+lib/misc.o : lib/misc.c
 	$(CC) $(CFLAGS) -o $@ $<
 
 lib/kliba.o : lib/kliba.asm

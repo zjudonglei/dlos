@@ -1,14 +1,14 @@
 #include "type.h"
 #include "const.h"
 #include "protect.h"
+#include "string.h"
+#include "proc.h"
 #include "tty.h"
 #include "console.h"
-#include "proc.h"
-#include "proto.h"
-#include "string.h"
 #include "global.h"
+#include "proto.h"
 
-PRIVATE void clock_handler(int irq)
+PUBLIC void clock_handler(int irq)
 {
 	ticks++;
 	p_proc_ready->ticks--;
@@ -24,6 +24,7 @@ PRIVATE void clock_handler(int irq)
 	schedule();
 }
 
+// ¶¨Ê±Æ÷
 PUBLIC void milli_delay(int mill_sec) {
 	int t = get_ticks();
 	while ((get_ticks() - t) * 1000 / HZ < mill_sec) {

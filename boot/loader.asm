@@ -54,7 +54,7 @@ LABEL_START:
 	; 软驱复位
 	xor ah, ah 
 	xor dl, dl
-	int 13
+	int 13h
 
 	mov word [wSectorNo], SectorNoOfRootDirectory ; 从根目录第19扇区开始查找
 LABEL_SEARCH_IN_ROOT_DIR_BEGIN:

@@ -1,36 +1,32 @@
 %include "sconst.inc"
 
-_NR_get_ticks equ 0
-_NR_write equ 1
-_NR_get_info equ 2
 INT_VECTOR_SYS_CALL equ 0x90
+_NR_printx equ 0
+_NR_sendrec equ 1
 
-global get_ticks 
-global write 
-global get_info 
+global printx 
+global sendrec 
 
 bits 32
 [section .text]
 
-; ====================================================================
-;                              get_ticks
-; ====================================================================
-get_ticks:
-	mov eax, _NR_get_ticks
+; ====================================================================================
+;                          void printx(char* s);
+; ====================================================================================
+printx:
+	mov eax, _NR_printx
+	mov edx, [esp + 4]
 	int INT_VECTOR_SYS_CALL
 	ret
 
 ; ====================================================================================
-;                          void write(char* buf, int len);
+;                  sendrec(int function, int src_dest, MESSAGE* msg);
 ; ====================================================================================
-write:
-	mov eax, _NR_write ;kernel.asm中的sys_call函数中庸
-	mov ebx, [esp+4] ;kernel.asm中的sys_call函数中庸
-	mov ecx, [esp+8] ;kernel.asm中的sys_call函数中庸
-	int INT_VECTOR_SYS_CALL
-	ret
-
-get_info:
-	mov eax, _NR_get_info
+; Never call sendrec() directly, call send_recv() instead.
+sendrec:
+	mov eax, _NR_sendrec ;kernel.asm中的sys_call函数中用
+	mov ebx, [esp+4] ;kernel.asm中的sys_call函数中用
+	mov ecx, [esp+8] ;kernel.asm中的sys_call函数中用
+	mov edx, [esp+12]
 	int INT_VECTOR_SYS_CALL
 	ret

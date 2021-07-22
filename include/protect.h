@@ -2,16 +2,16 @@
 #define _PROTECT_H_
 
 // 描述符，从0-63位
-typedef struct s_descriptor {
+struct descriptor {
 	u16 limit_low; // 界限低
 	u16 base_low; // 基址低
 	u8 base_mid; // 基址中
 	u8 attr1; /* P(1) DPL(2) DT(1) TYPE(4) */
 	u8 limit_high_attr2; /* G(1) D(1) 0(1) AVL(1) LimitHigh(4) */
 	u8 base_high; // 基址高
-}DESCRIPTOR;
+};
 
-typedef struct s_gate {
+struct gate {
 	u16 offset_low; // 偏移
 	u16 selector; // 选择子
 	u8 dcount;/* 该字段只在调用门描述符中有效。如果在利用
@@ -21,9 +21,9 @@ typedef struct s_gate {
 				   发生时，要复制的双字参数的数量。*/
 	u8 attr; // 属性
 	u16 offset_high;
-}GATE;
+};
 
-typedef struct s_tss {
+struct tss {
 	u32 backlink;
 	u32 esp0;
 	u32 ss0;
@@ -51,7 +51,7 @@ typedef struct s_tss {
 	u32 ldt;
 	u16 trap;
 	u16 iobase;/* I/O位图基址大于或等于TSS段界限，就表示没有I/O许可位图 */
-}TSS;
+};
 
 /*GDT*/
 // 描述符索引
@@ -75,18 +75,8 @@ typedef struct s_tss {
 #define SELECTOR_KERNEL_GS SELECTOR_VIDEO
 
 #define LDT_SIZE 2 // 每个任务都有个LDT，每个LDT里有2个描述符
-
-// 特权级
-#define SA_RPL_MASK 0xFFFC
-#define SA_RPL0 0
-#define SA_RPL1 1
-#define SA_RPL2 2
-#define SA_RPL3 3
-
-// 
-#define SA_TI_MASK 0xFFFB
-#define SA_TIG 0 // 全局
-#define SA_TIL 4 // 本地
+#define INDEX_LDT_C 0 // LDT的第一个选择子索引
+#define INDEX_LDT_RW 1
 
 // 描述符说明
 #define DA_32 0x4000 // 32位段
@@ -95,7 +85,7 @@ typedef struct s_tss {
 #define DA_DPL1 0x20 // DPL=1
 #define DA_DPL2 0x40 // DPL=2
 #define DA_DPL3 0x60 // DPL=3
-
+// 读，写，代码段，一致性
 #define DA_DR 0x90 // data+read
 #define DA_DRW 0x92 // data+read+write
 #define DA_DRWA 0x93 // data+read+write+accessed
@@ -111,8 +101,19 @@ typedef struct s_tss {
 #define DA_386IGate 0x8E // 386中断门
 #define DA_386TGate 0x8F // 386陷进门
 
-// 保护模式下的中断，20-31外部中断，32~255用户中断，中断是个门，选择子只有16位，所以中断数量最大256
+// 特权级
+#define SA_RPL_MASK 0xFFFC
+#define SA_RPL0 0
+#define SA_RPL1 1
+#define SA_RPL2 2
+#define SA_RPL3 3
 
+// 
+#define SA_TI_MASK 0xFFFB
+#define SA_TIG 0 // 全局
+#define SA_TIL 4 // 本地
+
+// 保护模式下的中断，20-31外部中断，32~255用户中断，中断是个门，选择子只有16位，所以中断数量最大256
 // 系统定义
 #define INT_VECTOR_DIVIDE 0x0 // 除法错
 #define INT_VECTOR_DEBUG 0x1 // 调试异常

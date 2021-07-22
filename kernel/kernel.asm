@@ -22,13 +22,7 @@ extern sys_call_table
 bits 32
 
 [SECTION .data]
-global clock_int_msg
-clock_int_msg:
-	db 'This is msg from system. ',0x0
-
-global test_int
-testInt:
-	dd 12345
+clock_int_msg db '^ ',0x0
 
 [section .bss]; 保护模式下堆栈
 StackSpace resb 2 * 1024
@@ -101,7 +95,7 @@ csinit:
 %macro hwint_master 1 
 	call save
 
-	; 关闭时钟中断
+	; 关闭当前中断
 	in al, INT_M_CTLMASK
 	or al, (1 << %1) 
 	out INT_M_CTLMASK, al
@@ -115,7 +109,7 @@ csinit:
 	pop ecx
 	cli
 
-	; 打开时钟中断
+	; 打开当前中断
 	in al, INT_M_CTLMASK
 	and al, ~(1 << %1) 
 	out INT_M_CTLMASK, al
@@ -259,19 +253,32 @@ exception:
 	hlt
 
 save:
-	; 在每次restart的时候esp设置成了当前进程的进程表起始地址[esp + P_STACKTOP]
-	; 中断发生的时候会装入 ss esp eflags cs eip
-	; call save的时候会装入save下条指令的地址retaddr
+	; 中断自动装入
+	; ss
+	; esp
+	; eflags
+	; cs
+	; eip
 
-	pushad 
+	; 调用者call save的时候会装入调用者的下条指令的地址
+	; retaddr
+
+	pushad ;
 	push ds 
 	push es 
 	push fs 
-	push gs ; 到这里为止位于栈顶了
+	push gs ; 到这里stackframe齐了
+
+	mov esi, edx
+
 	mov dx, ss  
 	mov ds, dx
 	mov es, dx
+	mov fs, dx
 
+	mov edx, esi
+
+	; 在每次restart的时候esp设置成了当前进程的进程表起始地址[esp + P_STACKTOP]
 	mov esi, esp ; 栈顶就是s_stackframe的起始地址
 
 	inc dword [k_reenter]
@@ -286,16 +293,20 @@ save:
 
 sys_call:
 	call save
-
-	push dword [p_proc_ready] ; 刚刚发起中断的进程
 	sti
 
+	push esi ; 下面会恢复
+
+	push dword [p_proc_ready] ; 刚刚发起中断的进程
+	push edx
 	push ecx
 	push ebx
 	call [sys_call_table + 4 * eax] ; 返回值int存放在eax中
-	mov [esi + EAXREG - P_STACKBASE],eax
+	add esp, 4 * 4
 
-	add esp, 4*3
+	pop esi
+
+	mov [esi + EAXREG - P_STACKBASE],eax
 
 	cli
 	ret ;
@@ -314,6 +325,8 @@ restart_reenter:
 	pop ds  
 	popad
 
-	add esp, 4
+	add esp, 4 ; 跳过retaddr
 
+	; 接下来就是cs ss这些中断时压入的数据了
+	; 现在刚好中断返回
 	iretd
