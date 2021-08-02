@@ -150,10 +150,31 @@ hwint07:
 	hwint_master 7
 
 %macro hwint_slave 1 
+	call save
+
+	; 关闭当前中断
+	in al, INT_S_CTLMASK
+	or al, (1 << (%1 - 8)) 
+	out INT_S_CTLMASK, al
+
+	mov al, EOI
+	out INT_M_CTL, al ; 恢复外部中断
+
+	nop
+	out INT_S_CTL, al ; 从寄存器
+
+	sti
 	push %1
-	call spurious_irq
-	add esp, 4
-	hlt
+	call [irq_table + 4 * %1]
+	pop ecx
+	cli
+
+	; 打开当前中断
+	in al, INT_S_CTLMASK
+	and al, ~(1 << (%1 - 8)) 
+	out INT_S_CTLMASK, al
+
+	ret ; call=push eip + ret，1 push了restart_reenter的地址，2 push了restart的地址
 %endmacro
 
 ALIGN 16

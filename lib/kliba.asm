@@ -12,6 +12,9 @@ global enable_irq
 global disable_irq
 global enable_int
 global disable_int
+global	port_read
+global	port_write
+global	glitter
 
 ; ========================================================================
 ;                  void disp_str(char * pszInfo);
@@ -203,4 +206,77 @@ disable_int:
 ; ========================================================================
 enable_int:
 	sti
+	ret
+
+; ========================================================================
+;                  void port_read(u16 port, void* buf, int n);
+; ========================================================================
+port_read:
+	mov	edx, [esp + 4]		; port
+	mov	edi, [esp + 4 + 4]	; buf
+	mov	ecx, [esp + 4 + 4 + 4]	; n
+	shr	ecx, 1
+	cld
+	rep	insw
+	ret
+
+; ========================================================================
+;                  void port_write(u16 port, void* buf, int n);
+; ========================================================================
+port_write:
+	mov	edx, [esp + 4]		; port
+	mov	esi, [esp + 4 + 4]	; buf
+	mov	ecx, [esp + 4 + 4 + 4]	; n
+	shr	ecx, 1
+	cld
+	rep	outsw
+	ret
+
+; ========================================================================
+;                  void glitter(int row, int col);
+; ========================================================================
+glitter:
+	push	eax
+	push	ebx
+	push	edx
+
+	mov	eax, [.current_char]
+	inc	eax
+	cmp	eax, .strlen
+	je	.1
+	jmp	.2
+.1:
+	xor	eax, eax
+.2:
+	mov	[.current_char], eax
+	mov	dl, byte [eax + .glitter_str]
+
+	xor	eax, eax
+	mov	al, [esp + 16]		; row
+	mov	bl, .line_width
+	mul	bl			; ax <- row * 80
+	mov	bx, [esp + 20]		; col
+	add	ax, bx
+	shl	ax, 1
+	movzx	eax, ax
+
+	mov	[gs:eax], dl
+
+	inc	eax
+	mov	byte [gs:eax], 4
+
+	jmp	.end
+
+.current_char:	dd	0
+.glitter_str:	db	'-\|/'
+		db	'1234567890'
+		db	'abcdefghijklmnopqrstuvwxyz'
+		db	'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+.strlen		equ	$ - .glitter_str
+.line_width	equ	80
+
+.end:
+	pop	edx
+	pop	ebx
+	pop	eax
 	ret

@@ -1,7 +1,9 @@
 #include "type.h"
+#include "stdio.h"
 #include "const.h"
 #include "protect.h"
 #include "string.h"
+#include "fs.h"
 #include "proc.h"
 #include "tty.h"
 #include "console.h"
@@ -100,11 +102,36 @@ PUBLIC int get_ticks() {
 }
 
 void TestA() {
-	while (1)
-	{
-		printf("<Ticks:%d>", get_ticks());
-		milli_delay(200);
-	}
+	int fd;
+	int n;
+	const char filename[] = "blah";
+	const char bufw[] = "Hello, hard disk!";
+	const int rd_bytes = 5;
+	char bufr[rd_bytes];
+
+	assert(rd_bytes <= strlen(bufw));
+
+	fd = open(filename, O_CREAT | O_RDWR);
+	assert(fd != -1);
+	printf("File created. fd: %d\n", fd);
+
+	n = write(fd, bufw, strlen(bufw));
+	assert(n == strlen(bufw));
+
+	close(fd);
+
+	fd = open(filename, O_RDWR);
+	assert(fd != -1);
+	printf("File opened. fd: %d\n", fd);
+
+	n = read(fd, bufr, rd_bytes);
+	assert(n == rd_bytes);
+	bufr[n] = 0;
+	printf("%d bytes read: %s\n", rd_bytes, bufr);
+
+	close(fd);
+
+	spin("TestA");
 }
 
 void TestB() {

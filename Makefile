@@ -16,10 +16,10 @@ DASM		= objdump
 CC		= gcc
 LD		= ld
 ASMBFLAGS	= -I boot/include/
-ASMKFLAGS	= -I include/ -f elf
+ASMKFLAGS	= -I include/ -I include/sys/ -f elf
 # 输入32位，如果你的linux是64位的话
 # CFLAGS		= -I include/ -m32 -c -fno-builtin -fno-stack-protector
-CFLAGS		= -I include/ -m32 -c -fno-builtin -fno-stack-protector -fpack-struct -Wall
+CFLAGS		= -I include/ -I include/sys/ -m32 -c -fno-builtin -fno-stack-protector -fpack-struct -Wall
 # LDFLAGS		= -m elf_i386 -s -Ttext $(ENTRYPOINT)
 LDFLAGS		= -m elf_i386 -Ttext $(ENTRYPOINT) -Map krnl.map
 DASMFLAGS	= -D
@@ -30,8 +30,11 @@ ORANGESKERNEL	= kernel.bin
 OBJS		= kernel/kernel.o kernel/syscall.o kernel/start.o kernel/main.o \
 			kernel/clock.o kernel/keyboard.o kernel/tty.o kernel/console.o \
 			kernel/i8259.o kernel/global.o kernel/protect.o kernel/proc.o \
-			kernel/systask.o kernel/printf.o kernel/vsprintf.o \
-			lib/kliba.o lib/klib.o lib/string.o lib/misc.o
+			kernel/systask.o kernel/hd.o \
+			lib/printf.o lib/vsprintf.o \
+			lib/kliba.o lib/klib.o lib/string.o lib/misc.o \
+			lib/open.o lib/close.o lib/read.o lib/write.o \
+			fs/main.o fs/open.o fs/misc.o fs/read_write.o
 DASMOUTPUT	= kernel.bin.asm
 
 # All Phony Targets
@@ -76,18 +79,16 @@ boot/loader.bin : boot/loader.asm boot/include/load.inc boot/include/fat12hdr.in
 $(ORANGESKERNEL) : $(OBJS)
 	$(LD) $(LDFLAGS) -o $(ORANGESKERNEL) $(OBJS)
 
-kernel/kernel.o : kernel/kernel.asm include/sconst.inc
+kernel/kernel.o : kernel/kernel.asm
 	$(ASM) $(ASMKFLAGS) -o $@ $<
 
-kernel/syscall.o : kernel/syscall.asm include/sconst.inc
+kernel/syscall.o : kernel/syscall.asm
 	$(ASM) $(ASMKFLAGS) -o $@ $<
 
-kernel/start.o : kernel/start.c include/type.h include/const.h include/protect.h \
-	include/string.h include/proc.h include/proto.h include/global.h
+kernel/start.o : kernel/start.c
 	$(CC) $(CFLAGS) -o $@ $<
 
-kernel/main.o : kernel/main.c include/type.h include/const.h include/protect.h \
-	include/string.h include/proc.h include/proto.h include/global.h
+kernel/main.o : kernel/main.c
 	$(CC) $(CFLAGS) -o $@ $<
 
 kernel/clock.o: kernel/clock.c  
@@ -103,31 +104,31 @@ kernel/console.o: kernel/console.c
 	$(CC) $(CFLAGS) -o $@ $<
 
 
-kernel/i8259.o : kernel/i8259.c include/type.h include/const.h include/protect.h include/proto.h
+kernel/i8259.o : kernel/i8259.c
 	$(CC) $(CFLAGS) -o $@ $<
 
-kernel/global.o : kernel/global.c include/type.h include/const.h include/protect.h \
-	include/proc.h include/global.h include/proto.h
+kernel/global.o : kernel/global.c
 	$(CC) $(CFLAGS) -o $@ $<
 
-kernel/protect.o : kernel/protect.c include/type.h include/const.h include/protect.h \
-	include/proc.h include/proto.h include/global.h
+kernel/protect.o : kernel/protect.c
 	$(CC) $(CFLAGS) -o $@ $<
 
 kernel/proc.o : kernel/proc.c
 	$(CC) $(CFLAGS) -o $@ $<
 
-kernel/printf.o : kernel/printf.c
+lib/printf.o : lib/printf.c
 	$(CC) $(CFLAGS) -o $@ $<
 
-kernel/vsprintf.o : kernel/vsprintf.c
+lib/vsprintf.o : lib/vsprintf.c
 	$(CC) $(CFLAGS) -o $@ $<
 
 kernel/systask.o : kernel/systask.c
 	$(CC) $(CFLAGS) -o $@ $<
 
-lib/klib.o : lib/klib.c include/type.h include/const.h include/protect.h include/string.h \
-	include/proc.h include/proto.h include/global.h
+kernel/hd.o : kernel/hd.c
+	$(CC) $(CFLAGS) -o $@ $<
+
+lib/klib.o : lib/klib.c
 	$(CC) $(CFLAGS) -o $@ $<
 
 lib/misc.o : lib/misc.c
@@ -138,3 +139,24 @@ lib/kliba.o : lib/kliba.asm
 
 lib/string.o : lib/string.asm
 	$(ASM) $(ASMKFLAGS) -o $@ $<
+
+lib/open.o : lib/open.c
+	$(CC) $(CFLAGS) -o $@ $<
+
+lib/cloes.o : lib/cloes.c
+	$(CC) $(CFLAGS) -o $@ $<
+
+lib/read.o : lib/read.c
+	$(CC) $(CFLAGS) -o $@ $<
+
+lib/write.o : lib/write.c
+	$(CC) $(CFLAGS) -o $@ $<
+
+fs/main.o : fs/main.c
+	$(CC) $(CFLAGS) -o $@ $<
+
+fs/open.o : fs/open.c
+	$(CC) $(CFLAGS) -o $@ $<
+
+fs/misc.o : fs/misc.c
+	$(CC) $(CFLAGS) -o $@ $<
