@@ -13,7 +13,7 @@ LABEL_DESC_VIDEO:	Descriptor	0B8000h,	0ffffh,				DA_DRW|DA_DPL3 		;显存段，�
 
 GdtLen	equ $ - LABEL_GDT ;GDT长度
 GdtPtr	dw	GdtLen - 1 ;GDT界限，低16位
-		dd 	BaseOfLoaderPhyAddr + LABEL_GDT ;GDT基址，高32位
+		dd 	BaseOfLoaderPhyAddr + LABEL_GDT ;GDT基址，高32位 (让基地址八字节对齐将起到优化速度之效果)
 
 SelectorFlatC	equ	LABEL_DESC_FLAT_C 	- LABEL_GDT
 SelectorFlatRW	equ	LABEL_DESC_FLAT_RW 	- LABEL_GDT
@@ -52,11 +52,10 @@ LABEL_START:
 
 	; 加载kenel.bin
 	; 软驱复位
+	mov word [wSectorNo], SectorNoOfRootDirectory ; 从根目录第19扇区开始查找
 	xor ah, ah 
 	xor dl, dl
 	int 13h
-
-	mov word [wSectorNo], SectorNoOfRootDirectory ; 从根目录第19扇区开始查找
 LABEL_SEARCH_IN_ROOT_DIR_BEGIN:
 	cmp word [wRootDirSizeForLoop], 0 ; 循环14次
 	jz LABEL_NO_KERNELBIN
@@ -101,14 +100,9 @@ LABEL_GOTO_NEXT_SEARCH_IN_ROOT_DIR:
 	jmp LABEL_SEARCH_IN_ROOT_DIR_BEGIN
 
 LABEL_NO_KERNELBIN:
-	mov dh, 2 ; 找到第二个字符串
+	mov dh, 3 ; 找到第二个字符串
 	call DispStrRealMode
-%ifdef _LOADER_DEBUG_
-	mov ax, 4c00h
-	int 21h; 回到dos页面
-%else
 	jmp $
-%endif
 
 LABEL_FILENAME_FOUND:
 	mov ax, RootDirSectors
@@ -117,8 +111,15 @@ LABEL_FILENAME_FOUND:
 	push eax
 	mov eax, [es:di + 01Ch]
 	mov dword [dwKernelSize], eax
+	cmp	eax, KERNEL_VALID_SPACE
+	ja	.1
 	pop eax
-
+	jmp	.2
+.1:
+	mov	dh, 4			; "Too Large"
+	call	DispStrRealMode		; 显示字符串
+	jmp	$			; KERNEL.BIN 太大，死循环在这里
+.2:
 	add di, 01Ah; sector标记开始的地方，详见根节点结构，出现了个大大的问题，我的根节点
 	mov cx, word[es:di] ; es:BaseOfLoader，初始的FAT节点
 
@@ -150,10 +151,33 @@ LABEL_GOON_LOADING_FILE:
 	add ax, dx ; 数据区
 	add ax, DeltaSectorNo
 	add bx, [BPB_BytsPerSec]
+	jc .1 ; 如果 bx 重新变成 0，说明内核大于 64KB
+	jmp .2
+.1:
+	push ax 
+	mov ax, es  
+	add ax, 1000h
+	mov es, ax ; es += 0x1000  ← es 指向下一个段
+	pop ax
+.2:
 	jmp LABEL_GOON_LOADING_FILE
 LABEL_FILE_LOADED:
 	call KillMotor
-	mov dh, 1
+
+	;; 将硬盘引导扇区内容读入内存 0500h 处
+	xor     ax, ax
+	mov     es, ax
+	mov     ax, 0201h       ; AH = 02
+	                        ; AL = number of sectors to read (must be nonzero) 
+	mov     cx, 1           ; CH = low eight bits of cylinder number
+	                        ; CL = sector number 1-63 (bits 0-5)
+	                        ;      high two bits of cylinder (bits 6-7, hard disk only)
+	mov     dx, 80h         ; DH = head number
+	                        ; DL = drive number (bit 7 set for hard disk)
+	mov     bx, 500h        ; ES:BX -> data buffer
+	int     13h
+	;; 硬盘操作完毕
+	mov dh, 2
 	call DispStrRealMode
 
 	lgdt [GdtPtr];将GdtPtr加载gdtr寄存器
@@ -170,7 +194,6 @@ LABEL_FILE_LOADED:
 	; 进入保护模式，每当把一个选择子装入到某个段寄存器时，处理器自动从描述符表中取出相应的描述符，把描述符中的信息保存到对应的高速缓冲寄存器中。此后对该段访问时，处理器都使用对应高速缓冲寄存器中的描述符信息，而不用再从描述符表中取描述符。 
 	jmp dword SelectorFlatC:(BaseOfLoaderPhyAddr+LABEL_PM_START)	; 执行这一句会把 SelectorCode32 装入 cs,
 					; 并跳转到 Code32Selector:0  处
-	jmp $
 
 ;==================================
 ;变量
@@ -183,8 +206,10 @@ dwKernelSize dd 0; 内核大小
 KernelFileName db "KERNEL  BIN", 0
 MessageLength equ 9 
 LoadMessage:	db "Loading  " ; 9个字节
-Message1	db "Ready.   "
-Message2 db "No Kernel"
+Message1	db "         "
+Message2	db "Ready.   "
+Message3 	db "No Kernel"
+Message4	db "Too LARGE"
 ;==================================
 
 DispStrRealMode:
@@ -300,20 +325,18 @@ KillMotor:
 ALIGN 32
 [BITS 32] ;32位编译模式
 LABEL_PM_START:
+	mov ax,SelectorVideo
+	mov gs,ax
 	mov ax,SelectorFlatRW
 	mov ds,ax 
 	mov es,ax 
 	mov fs,ax
 	mov ss,ax
 
-	mov ax,SelectorVideo
-	mov gs,ax
+
 
 	mov esp,TopOfStack
 
-	push szMemChkTitle 
-	call DispStr
-	add esp, 4
 	
 	call DispMemInfo
 	call SetupPaging
@@ -324,7 +347,89 @@ LABEL_PM_START:
 	
 	call InitKernel
 
-	jmp SelectorFlatC:KernelEntryPointPhyAddr
+	mov	dword [BOOT_PARAM_ADDR], BOOT_PARAM_MAGIC	; BootParam[0] = BootParamMagic;
+	mov	eax, [dwMemSize]				;
+	mov	[BOOT_PARAM_ADDR + 4], eax			; BootParam[1] = MemSize;
+	mov	eax, BaseOfKernelFile
+	shl	eax, 4
+	add	eax, OffsetOfKernelFile
+	mov	[BOOT_PARAM_ADDR + 8], eax			; BootParam[2] = KernelFilePhyAddr;
+
+	;***************************************************************
+	jmp	SelectorFlatC:KRNL_ENT_PT_PHY_ADDR	; 正式进入内核 *
+	;***************************************************************
+	; 内存看上去是这样的：
+	;              ┃                                    ┃
+	;              ┃                 .                  ┃
+	;              ┃                 .                  ┃
+	;              ┃                 .                  ┃
+	;              ┣━━━━━━━━━━━━━━━━━━┫
+	;              ┃■■■■■■■■■■■■■■■■■■┃
+	;              ┃■■■■■■Page  Tables■■■■■■┃
+	;              ┃■■■■■(大小由LOADER决定)■■■■┃
+	;    00101000h ┃■■■■■■■■■■■■■■■■■■┃ PAGE_TBL_BASE
+	;              ┣━━━━━━━━━━━━━━━━━━┫
+	;              ┃■■■■■■■■■■■■■■■■■■┃
+	;    00100000h ┃■■■■Page Directory Table■■■■┃ PAGE_DIR_BASE  <- 1M
+	;              ┣━━━━━━━━━━━━━━━━━━┫
+	;              ┃□□□□□□□□□□□□□□□□□□┃
+	;       F0000h ┃□□□□□□□System ROM□□□□□□┃
+	;              ┣━━━━━━━━━━━━━━━━━━┫
+	;              ┃□□□□□□□□□□□□□□□□□□┃
+	;       E0000h ┃□□□□Expansion of system ROM □□┃
+	;              ┣━━━━━━━━━━━━━━━━━━┫
+	;              ┃□□□□□□□□□□□□□□□□□□┃
+	;       C0000h ┃□□□Reserved for ROM expansion□□┃
+	;              ┣━━━━━━━━━━━━━━━━━━┫
+	;              ┃□□□□□□□□□□□□□□□□□□┃ B8000h ← gs
+	;       A0000h ┃□□□Display adapter reserved□□□┃
+	;              ┣━━━━━━━━━━━━━━━━━━┫
+	;              ┃□□□□□□□□□□□□□□□□□□┃
+	;       9FC00h ┃□□extended BIOS data area (EBDA)□┃
+	;              ┣━━━━━━━━━━━━━━━━━━┫
+	;              ┃■■■■■■■■■■■■■■■■■■┃
+	;       90000h ┃■■■■■■■LOADER.BIN■■■■■■┃ somewhere in LOADER ← esp
+	;              ┣━━━━━━━━━━━━━━━━━━┫
+	;              ┃■■■■■■■■■■■■■■■■■■┃
+	;              ┃■■■■■■■■■■■■■■■■■■┃
+	;       70000h ┃■■■■■■■KERNEL.BIN■■■■■■┃
+	;              ┣━━━━━━━━━━━━━━━━━━┫
+	;              ┃■■■■■■■■■■■■■■■■■■┃
+	;              ┃■■■■■■■■■■■■■■■■■■┃
+	;              ┃■■■■■■■■■■■■■■■■■■┃
+	;              ┃■■■■■■■■■■■■■■■■■■┃
+	;              ┃■■■■■■■■■■■■■■■■■■┃
+	;              ┃■■■■■■■■■■■■■■■■■■┃
+	;              ┃■■■■■■■■■■■■■■■■■■┃ 7C00h~7DFFh : BOOT SECTOR, overwritten by the kernel
+	;              ┃■■■■■■■■■■■■■■■■■■┃
+	;              ┃■■■■■■■■■■■■■■■■■■┃
+	;              ┃■■■■■■■■■■■■■■■■■■┃
+	;        1000h ┃■■■■■■■■KERNEL■■■■■■■┃ 1000h ← KERNEL 入口 (KRNL_ENT_PT_PHY_ADDR)
+	;              ┣━━━━━━━━━━━━━━━━━━┫
+	;              ┃                                    ┃
+	;         500h ┃              F  R  E  E            ┃
+	;              ┣━━━━━━━━━━━━━━━━━━┫
+	;              ┃□□□□□□□□□□□□□□□□□□┃
+	;         400h ┃□□□□ROM BIOS parameter area □□┃
+	;              ┣━━━━━━━━━━━━━━━━━━┫
+	;              ┃◇◇◇◇◇◇◇◇◇◇◇◇◇◇◇◇◇◇┃
+	;           0h ┃◇◇◇◇◇◇Int  Vectors◇◇◇◇◇◇┃
+	;              ┗━━━━━━━━━━━━━━━━━━┛ ← cs, ds, es, fs, ss
+	;
+	;
+	;		┏━━━┓		┏━━━┓
+	;		┃■■■┃ 我们使用 	┃□□□┃ 不能使用的内存
+	;		┗━━━┛		┗━━━┛
+	;		┏━━━┓		┏━━━┓
+	;		┃      ┃ 未使用空间	┃◇◇◇┃ 可以覆盖的内存
+	;		┗━━━┛		┗━━━┛
+	;
+	; 注：KERNEL 的位置实际上是很灵活的，可以通过同时改变 LOAD.INC 中的 KRNL_ENT_PT_PHY_ADDR 和 MAKEFILE 中参数 -Ttext 的值来改变。
+	;     比如，如果把 KRNL_ENT_PT_PHY_ADDR 和 -Ttext 的值都改为 0x400400，则 KERNEL 就会被加载到内存 0x400000(4M) 处，入口在 0x400400。
+	;
+
+
+
 
 ; 显示 AL 中的数字 用16进制显示
 ; 默认地:
@@ -500,6 +605,9 @@ DispMemInfo:
 	push edi 
 	push ecx
 
+	push	szMemChkTitle
+	call	DispStr
+	add	esp, 4
 	mov esi, MemChkBuf
 	mov ecx, [dwMCRNumber]; for(int i=0;i<[MCRNumber];i++)//每次得到一个ARDS
 .loop:
@@ -619,7 +727,7 @@ _szRAMSize db "RAM size:", 0
 _szReturn			db	0Ah, 0
 
 _dwMCRNumber: dd 0
-_dwDispPos: dd (80*6 + 0) * 2
+_dwDispPos: dd (80*7 + 0) * 2
 _dwMemSize: dd 0
 _ARDStruct:
 	_dwBaseAddrLow: dd 0
@@ -649,5 +757,5 @@ MemChkBuf equ _MemChkBuf + BaseOfLoaderPhyAddr
 ;全局堆栈段
 [SECTION .gs]
 [BITS 32]
-StackSpace:	times 1024 db 0
+StackSpace:	times 1000h db 0
 TopOfStack equ BaseOfLoaderPhyAddr + $

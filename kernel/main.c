@@ -103,7 +103,7 @@ PUBLIC int get_ticks() {
 
 void TestA() {
 	int fd;
-	int n;
+	int i, n;
 	const char filename[] = "blah";
 	const char bufw[] = "Hello, hard disk!";
 	const int rd_bytes = 5;
@@ -113,7 +113,7 @@ void TestA() {
 
 	fd = open(filename, O_CREAT | O_RDWR);
 	assert(fd != -1);
-	printf("File created. fd: %d\n", fd);
+	printl("File created. fd: %d\n", fd);
 
 	n = write(fd, bufw, strlen(bufw));
 	assert(n == strlen(bufw));
@@ -122,32 +122,69 @@ void TestA() {
 
 	fd = open(filename, O_RDWR);
 	assert(fd != -1);
-	printf("File opened. fd: %d\n", fd);
+	printl("File opened. fd: %d\n", fd);
 
 	n = read(fd, bufr, rd_bytes);
 	assert(n == rd_bytes);
 	bufr[n] = 0;
-	printf("%d bytes read: %s\n", rd_bytes, bufr);
+	printl("%d bytes read: %s\n", rd_bytes, bufr);
 
 	close(fd);
+
+	char* filenames[] = { "/foo", "/bar", "baz" };
+	for (i = 0; i < sizeof(filenames) / sizeof(filenames[0]);i++) {
+		fd = open(filenames[i], O_CREAT | O_RDWR);
+		assert(fd != -1);
+		printl("File created: %s (fd %d)\n", filenames[i], fd);
+		close(fd);
+	}
+
+	char* rfilenames[] = { "/bar", "/foo", "baz" , "/dev_tty0" };
+	for (i = 0; i < sizeof(rfilenames) / sizeof(rfilenames[0]); i++) {
+		if (unlink(rfilenames[i]) == 0)
+			printl("File removed: %s\n", rfilenames[i]);
+		else
+			printl("Failed to remove file: %s\n", rfilenames[i]);
+	}
 
 	spin("TestA");
 }
 
 void TestB() {
+
+	char tty_name[] = "/dev_tty1";
+	int fd_stdin = open(tty_name, O_RDWR); // 一个用于读
+	assert(fd_stdin == 0);
+	int fd_stdout = open(tty_name, O_RDWR); // 一个用于写
+	assert(fd_stdout == 1);
+
+	char rdbuf[128];
+
 	while (1)
 	{
-		printf("B");
-		milli_delay(200);
+		write(fd_stdout, "$ ", 2);
+
+		int r = read(fd_stdin, rdbuf, 70);
+		//spin("TestB");
+		rdbuf[r] = 0;
+
+		if (strcmp(rdbuf, "hello") == 0) {
+			write(fd_stdout, "hello world!\n", 13);
+		}
+		else {
+			if (rdbuf[0]) {
+				write(fd_stdout, "{", 1);
+				write(fd_stdout, rdbuf, r);
+				write(fd_stdout, "}\n", 2);
+			}
+		}
 	}
+
+	assert(0);
 }
 
 void TestC() {
-	while (1)
-	{
-		printf("C");
-		milli_delay(200);
-	}
+	spin("TestC");
 }
 
 PUBLIC void panic(const char* fmt, ...) {

@@ -4,7 +4,7 @@
 
 # Entry point of Orange'S
 # It must have the same value with 'KernelEntryPointPhyAddr' in load.inc!
-ENTRYPOINT	= 0x30400
+ENTRYPOINT	= 0x1000
 
 # Offset of entry point in kernel file
 # It depends on ENTRYPOINT
@@ -27,14 +27,16 @@ DASMFLAGS	= -D
 # This Program
 ORANGESBOOT	= boot/boot.bin boot/loader.bin
 ORANGESKERNEL	= kernel.bin
-OBJS		= kernel/kernel.o kernel/syscall.o kernel/start.o kernel/main.o \
+OBJS		= kernel/kernel.o lib/syscall.o kernel/start.o kernel/main.o \
 			kernel/clock.o kernel/keyboard.o kernel/tty.o kernel/console.o \
 			kernel/i8259.o kernel/global.o kernel/protect.o kernel/proc.o \
 			kernel/systask.o kernel/hd.o \
 			lib/printf.o lib/vsprintf.o \
 			lib/kliba.o lib/klib.o lib/string.o lib/misc.o \
-			lib/open.o lib/close.o lib/read.o lib/write.o \
-			fs/main.o fs/open.o fs/misc.o fs/read_write.o
+			lib/open.o lib/close.o lib/read.o lib/write.o lib/unlink.o \
+			lib/getpid.o lib/syslog.o \
+			fs/main.o fs/open.o fs/misc.o fs/read_write.o fs/link.o \
+			fs/disklog.o
 DASMOUTPUT	= kernel.bin.asm
 
 # All Phony Targets
@@ -62,6 +64,9 @@ realclean :
 disasm :
 	$(DASM) $(DASMFLAGS) $(ORANGESKERNEL) > $(DASMOUTPUT)
 
+disasmsystask :
+	$(DASM) $(DASMFLAGS) kernel/systask.o > $(DASMOUTPUT)
+
 # We assume that "a.img" exists in current folder
 buildimg :
 	dd if=boot/boot.bin of=bochs-a.img bs=512 count=1 conv=notrunc
@@ -82,7 +87,7 @@ $(ORANGESKERNEL) : $(OBJS)
 kernel/kernel.o : kernel/kernel.asm
 	$(ASM) $(ASMKFLAGS) -o $@ $<
 
-kernel/syscall.o : kernel/syscall.asm
+lib/syscall.o : lib/syscall.asm
 	$(ASM) $(ASMKFLAGS) -o $@ $<
 
 kernel/start.o : kernel/start.c
@@ -152,11 +157,29 @@ lib/read.o : lib/read.c
 lib/write.o : lib/write.c
 	$(CC) $(CFLAGS) -o $@ $<
 
+lib/unlink.o : lib/unlink.c
+	$(CC) $(CFLAGS) -o $@ $<
+
+lib/getpid.o : lib/getpid.c
+	$(CC) $(CFLAGS) -o $@ $<
+
+lib/syslog.o : lib/syslog.c
+	$(CC) $(CFLAGS) -o $@ $<
+
 fs/main.o : fs/main.c
 	$(CC) $(CFLAGS) -o $@ $<
 
 fs/open.o : fs/open.c
 	$(CC) $(CFLAGS) -o $@ $<
 
+fs/read_write.o: fs/read_write.c
+	$(CC) $(CFLAGS) -o $@ $<
+
+fs/link.o: fs/link.c
+	$(CC) $(CFLAGS) -o $@ $<
+
 fs/misc.o : fs/misc.c
+	$(CC) $(CFLAGS) -o $@ $<
+
+fs/disklog.o : fs/disklog.c
 	$(CC) $(CFLAGS) -o $@ $<
