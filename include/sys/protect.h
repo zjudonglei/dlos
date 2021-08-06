@@ -11,6 +11,8 @@ struct descriptor {
 	u8 base_high; // 基址高
 };
 
+#define reassembly(high, high_shift, mid, mid_shift, low) ((high << high_shift) + (mid << mid_shift) + low)
+
 struct gate {
 	u16 offset_low; // 偏移
 	u16 selector; // 选择子
@@ -81,6 +83,7 @@ struct tss {
 // 描述符说明
 #define DA_32 0x4000 // 32位段
 #define DA_LIMIT_4K 0x8000 // 段界限粒度4k
+#define LIMIT_4K_SHIFT 12
 #define DA_DPL0 0x00 // DPL=0
 #define DA_DPL1 0x20 // DPL=1
 #define DA_DPL2 0x40 // DPL=2
@@ -139,5 +142,7 @@ struct tss {
 
 // 线性地址->物理地址
 #define vir2phys(seg_base, vir) (u32)(((u32)seg_base) + (u32)(vir))
+
+#define makelinear(seg, off) (u32)((u32)(seg2linear(seg)) + (u32)off)
 
 #endif // !_PROTECT_H_

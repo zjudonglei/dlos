@@ -51,4 +51,7 @@ PUBLIC int write(int fd, const void* buf, int count);
 // lib/unlink.c
 PUBLIC int unlink(const char* pathname);
 
+// lib/fork.c
+PUBLIC int fork();
+
 #endif // !_STDIO_H_

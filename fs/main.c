@@ -15,6 +15,8 @@
 PRIVATE void init_fs();
 PRIVATE void mkfs();
 PRIVATE void read_super_block(int dev);
+PRIVATE int fs_fork();
+PRIVATE int fs_exit();
 
 PUBLIC void task_fs() {
 	printl("Task FS begins.\n");
@@ -43,6 +45,12 @@ PUBLIC void task_fs() {
 		case RESUME_PROC:
 			src = fs_msg.PROC_NR;
 			break;
+		case FORK:
+			fs_msg.RETVAL = fs_fork();
+			break;
+		case EXIT:
+			fs_msg.RETVAL = fs_exit();
+			break;
 		default:
 			dump_msg("FS::unknown message:", &fs_msg);
 			assert(0);
@@ -59,15 +67,17 @@ PUBLIC void task_fs() {
 		msg_name[UNLINK] = "UNLINK";
 		switch (msgtype)
 		{
+		case UNLINK:
+			dump_fd_graph("%s just finished", msg_name[msgtype]);
+			break;
 		case OPEN:
 		case CLOSE:
 		case READ:
 		case WRITE:
-		case UNLINK:
-			dump_fd_graph("%s just finished", msg_name[msgtype]);
-			break;
 		case DISK_LOG:
 		case RESUME_PROC:
+		case FORK:
+		case EXIT:
 			break;
 		default:
 			assert(0);
@@ -356,4 +366,31 @@ PUBLIC void sync_inode(struct inode* p) {
 	pinode->i_nr_sects = p->i_nr_sects;
 
 	WR_SECT(p->i_dev, blk_nr);
+}
+
+PRIVATE int fs_fork() {
+	int i;
+	struct proc* child = &proc_table[fs_msg.PID];
+	for (i = 0; i < NR_FILES; i++) {
+		if (child->filp[i]) {
+			child->filp[i]->fd_cnt++;
+			child->filp[i]->fd_inode->i_cnt++;
+		}
+	}
+	return 0;
+}
+
+PRIVATE int fs_exit() {
+	int i;
+	struct proc* p = &proc_table[fs_msg.PID];
+	for (i = 0; i < NR_FILES; i++) {
+		if (p->filp[i]) {
+			p->filp[i]->fd_inode->i_cnt--;
+			if (--p->filp[i]->fd_cnt == 0) {
+				p->filp[i]->fd_inode = 0; // 删除引用
+			}
+			p->filp[i] = 0; // 删除引用
+		}
+	}
+	return 0;
 }

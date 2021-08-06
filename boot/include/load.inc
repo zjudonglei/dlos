@@ -21,7 +21,7 @@ SUPER_BLK_SEG		equ	0x70
 
 ;; ATTENTION:
 ;;     Macros below should corresponding with C source.
-BOOT_PARAM_ADDR		equ	0x900
+BOOT_PARAM_ADDR		equ	0x900 ; 存放内存地址的地方
 BOOT_PARAM_MAGIC	equ	0xB007
 
 ;; we don't calculate the base sector nr of the root device while loading

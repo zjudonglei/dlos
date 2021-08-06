@@ -60,6 +60,7 @@ struct dir_entry {
 struct file_desc {
 	int fd_mode; // 操作类型，读写等
 	int fd_pos; // 读写到的位置
+	int fd_cnt; // 打开这个文件的进程数
 	struct inode* fd_inode; // 指向的节点
 };
 

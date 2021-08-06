@@ -35,6 +35,8 @@ OBJS		= kernel/kernel.o lib/syscall.o kernel/start.o kernel/main.o \
 			lib/kliba.o lib/klib.o lib/string.o lib/misc.o \
 			lib/open.o lib/close.o lib/read.o lib/write.o lib/unlink.o \
 			lib/getpid.o lib/syslog.o \
+			lib/fork.o \
+			mm/main.o mm/forkexit.o \
 			fs/main.o fs/open.o fs/misc.o fs/read_write.o fs/link.o \
 			fs/disklog.o
 DASMOUTPUT	= kernel.bin.asm
@@ -164,6 +166,15 @@ lib/getpid.o : lib/getpid.c
 	$(CC) $(CFLAGS) -o $@ $<
 
 lib/syslog.o : lib/syslog.c
+	$(CC) $(CFLAGS) -o $@ $<
+
+lib/fork.o : lib/fork.c
+	$(CC) $(CFLAGS) -o $@ $<
+
+mm/main.o : mm/main.c
+	$(CC) $(CFLAGS) -o $@ $<
+
+mm/forkexit.o : mm/forkexit.c
 	$(CC) $(CFLAGS) -o $@ $<
 
 fs/main.o : fs/main.c

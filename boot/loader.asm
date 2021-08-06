@@ -347,13 +347,13 @@ LABEL_PM_START:
 	
 	call InitKernel
 
-	mov	dword [BOOT_PARAM_ADDR], BOOT_PARAM_MAGIC	; BootParam[0] = BootParamMagic;
+	mov	dword [BOOT_PARAM_ADDR], BOOT_PARAM_MAGIC	; BootParam[0] = 魔数;
 	mov	eax, [dwMemSize]				;
-	mov	[BOOT_PARAM_ADDR + 4], eax			; BootParam[1] = MemSize;
+	mov	[BOOT_PARAM_ADDR + 4], eax			; BootParam[1] = 内存大小;
 	mov	eax, BaseOfKernelFile
 	shl	eax, 4
 	add	eax, OffsetOfKernelFile
-	mov	[BOOT_PARAM_ADDR + 8], eax			; BootParam[2] = KernelFilePhyAddr;
+	mov	[BOOT_PARAM_ADDR + 8], eax			; BootParam[2] = kernel.bin开始的地方;
 
 	;***************************************************************
 	jmp	SelectorFlatC:KRNL_ENT_PT_PHY_ADDR	; 正式进入内核 *

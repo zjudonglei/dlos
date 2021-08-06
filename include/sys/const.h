@@ -88,6 +88,8 @@
 #define TASK_SYS 1
 #define TASK_HD 2
 #define TASK_FS 3
+#define TASK_MM 4
+#define INIT 5
 #define ANY (NR_TASKS + NR_PROCS + 10) // 来源或接收任意进程的消息
 #define NO_TASK (NR_TASKS + NR_PROCS + 20)
 
@@ -116,6 +118,12 @@ enum msgtype {
 
 	// fs <-> tty
 	SUSPEND_PROC, RESUME_PROC,
+
+	// MM
+	EXEC, WAIT,
+
+	// FS<->MM
+	FORK, EXIT, 
 
 	// 系统调用返回，用于TTY，SYS，FS，MM等等
 	SYSCALL_RET,
@@ -162,6 +170,7 @@ enum msgtype {
 
 #define PID u.m3.m3i2
 #define RETVAL u.m3.m3i1 // 参见tpye.h
+#define STATUS u.m3.m3i1
 
 #define DIOCTL_GET_GEO 1
 #define SECTOR_SIZE 512 // 每扇区字节数

@@ -17,14 +17,19 @@ PUBLIC int kernel_main() {
 	struct task* p_task;
 	struct proc* p_proc = proc_table;
 	char* p_task_stack = task_stack + STACK_SIZE_TOTAL;
-	u16 selector_ldt = SELECTOR_LDT_FIRST;
+	//u16 selector_ldt = SELECTOR_LDT_FIRST;
 	u8 privilege;
 	u8 rpl;
 	int eflags;
-	int i;
+	int i, j;
 	int prio;
 
-	for (i = 0; i < NR_TASKS + NR_PROCS; i++) {
+	for (i = 0; i < NR_TASKS + NR_PROCS; i++, p_proc++, p_task++) {
+		if (i >= NR_TASKS + NR_NATIVE_PROCS) {
+			p_proc->p_flags = FREE_SLOT;
+			continue;
+		}
+
 		if (i < NR_TASKS) {
 			p_task = task_table + i;
 			privilege = PRIVILEGE_TASK;
@@ -41,25 +46,41 @@ PUBLIC int kernel_main() {
 		}
 
 		strcpy(p_proc->name, p_task->name);
-		p_proc->pid = i;
+		p_proc->p_parent = NO_TASK;
+		//p_proc->pid = i;
 
-		p_proc->ldt_sel = selector_ldt;
+		if (strcmp(p_task->name, "INIT") != 0) {
+			//p_proc->ldt_sel = selector_ldt;
+			p_proc->ldts[INDEX_LDT_C] = gdt[SELECTOR_KERNEL_CS >> 3];
+			p_proc->ldts[INDEX_LDT_RW] = gdt[SELECTOR_KERNEL_CS >> 3];
 
-		memcpy(&p_proc->ldts[0], &gdt[SELECTOR_KERNEL_CS >> 3], sizeof(struct descriptor));
-		p_proc->ldts[0].attr1 = DA_C | privilege << 5;
-		memcpy(&p_proc->ldts[1], &gdt[SELECTOR_KERNEL_DS >> 3], sizeof(struct descriptor));
-		p_proc->ldts[1].attr1 = DA_DRW | privilege << 5;
-		p_proc->regs.cs = (0 & SA_RPL_MASK & SA_TI_MASK) | SA_TIL | rpl; // 指向LDT的第一个描述符，就是上面的ldts[0]
-		p_proc->regs.ds = (8 & SA_RPL_MASK & SA_TI_MASK) | SA_TIL | rpl; // 指向LDT的第二个描述符，就是上面的ldts[1]
-		p_proc->regs.es = (8 & SA_RPL_MASK & SA_TI_MASK) | SA_TIL | rpl;
-		p_proc->regs.fs = (8 & SA_RPL_MASK & SA_TI_MASK) | SA_TIL | rpl;
-		p_proc->regs.ss = (8 & SA_RPL_MASK & SA_TI_MASK) | SA_TIL | rpl;
+			//memcpy(&p_proc->ldts[0], &gdt[SELECTOR_KERNEL_CS >> 3], sizeof(struct descriptor));
+			p_proc->ldts[INDEX_LDT_C].attr1 = DA_C | privilege << 5;
+			//memcpy(&p_proc->ldts[1], &gdt[SELECTOR_KERNEL_DS >> 3], sizeof(struct descriptor));
+			p_proc->ldts[INDEX_LDT_RW].attr1 = DA_DRW | privilege << 5;
+		}
+		else {
+			unsigned int k_base; 
+			unsigned int k_limit;
+			int ret = get_kernel_map(&k_base, &k_limit);
+			assert(ret == 0);
+			init_descriptor(&p_proc->ldts[INDEX_LDT_C],
+				0, // 内核起始地址0x900，忽略不计
+				(k_base + k_limit) >> LIMIT_4K_SHIFT,
+				DA_32 | DA_LIMIT_4K | DA_C | privilege << 5);
+			init_descriptor(&p_proc->ldts[INDEX_LDT_RW],
+				0, (k_base + k_limit) >> LIMIT_4K_SHIFT,
+				DA_32 | DA_LIMIT_4K | DA_DRW | privilege << 5);
+		}
+		p_proc->regs.cs = INDEX_LDT_C << 3 | SA_TIL | rpl; // 指向LDT的第一个描述符，就是上面的ldts[0]
+		p_proc->regs.ds = p_proc->regs.es = p_proc->regs.fs = p_proc->regs.ss =
+			INDEX_LDT_RW << 3 | SA_TIL | rpl; // 指向LDT的第二个描述符，就是上面的ldts[1]
 		p_proc->regs.gs = (SELECTOR_KERNEL_GS & SA_RPL_MASK) | rpl;
 		p_proc->regs.eip = (u32)p_task->initial_eip;
 		p_proc->regs.esp = (u32)p_task_stack; // 指向任务的堆栈,A在最上面，栈底
 		p_proc->regs.eflags = eflags; // IF=1, IOPL=1
 
-		p_proc->nr_tty = 0;
+		//p_proc->nr_tty = 0;
 		p_proc->p_flags = 0;
 		p_proc->p_msg = 0;
 		p_proc->p_recvfrom = NO_TASK;
@@ -69,10 +90,11 @@ PUBLIC int kernel_main() {
 		p_proc->next_sending = 0;
 		p_proc->ticks = p_proc->priority = prio;
 
+		for (j = 0; j < NR_FILES; j++)
+			p_proc->filp[j] = 0;
+
 		p_task_stack -= p_task->stacksize;
-		p_proc++;
-		p_task++;
-		selector_ldt += 1 << 3;
+		//selector_ldt += 1 << 3;
 	}
 
     proc_table[NR_TASKS + 0].nr_tty = 0;
@@ -101,7 +123,28 @@ PUBLIC int get_ticks() {
 	return msg.RETVAL;
 }
 
+// 这就是所有进程的祖先了吗，真神奇
+void Init() {
+	int fd_stdin = open("/dev_tty0", O_RDWR); // 一个用于读
+	assert(fd_stdin == 0);
+	int fd_stdout = open("/dev_tty0", O_RDWR); // 一个用于写
+	assert(fd_stdout == 1);
+
+	printf("Init() is running ...\n");
+
+	int pid = fork();
+	if (pid != 0) {
+		printf("parent is running, child pid:%d\n", pid);
+		spin("parent");
+	}
+	else {
+		printf("child is running, pid:%d\n", getpid());
+		spin("child");
+	}
+}
+
 void TestA() {
+	for (;;);
 	int fd;
 	int i, n;
 	const char filename[] = "blah";
@@ -151,7 +194,7 @@ void TestA() {
 }
 
 void TestB() {
-
+	for (;;);
 	char tty_name[] = "/dev_tty1";
 	int fd_stdin = open(tty_name, O_RDWR); // 一个用于读
 	assert(fd_stdin == 0);
@@ -184,6 +227,7 @@ void TestB() {
 }
 
 void TestC() {
+	for (;;);
 	spin("TestC");
 }
 

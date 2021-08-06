@@ -16,9 +16,12 @@ PUBLIC char* strcpy(char* p_dst, const char* p_src);
 
 // protect.c
 PUBLIC void init_prot();
-PUBLIC u32 seg2phys(u16 seg);
+PUBLIC u32 seg2linear(u16 seg);
+PUBLIC void init_descriptor(struct descriptor* p_desc, u32 base, u32 limit, u16 attribute);
 
 // klib.c
+PUBLIC void get_boot_params(struct boot_params* pbp);
+PUBLIC int get_kernel_map(unsigned int* b, unsigned int* l);
 PUBLIC void delay(int time);
 PUBLIC void disp_int(int input);
 PUBLIC char* itoa(char* str, int num);
@@ -28,6 +31,7 @@ PUBLIC void restart();
 
 // main.c
 PUBLIC int get_ticks();
+PUBLIC void Init();
 PUBLIC void TestA();
 PUBLIC void TestB();
 PUBLIC void TestC();
@@ -85,6 +89,16 @@ PUBLIC void dump_fd_graph(const char* fmt, ...);
 
 // fs/link.c
 PUBLIC int do_unlink();
+
+// mm/main.c
+PUBLIC void task_mm();
+PUBLIC int alloc_mem(int pid, int memsize);
+PUBLIC int free_mem(int pid);
+
+// mm/forkexit.c
+PUBLIC int do_fork();
+PUBLIC void do_exit(int status);
+PUBLIC void do_wait();
 
 // console.c
 PUBLIC void out_char(CONSOLE* p_con, char ch);

@@ -29,6 +29,12 @@ extern irq_handler irq_table[]; // 外部中断表
 extern TTY tty_table[]; // 分屏表
 extern CONSOLE console_table[]; // 分屏对应的控制台表
 
+// MM
+EXTERN MESSAGE mm_msg;
+extern u8* mmbuf;
+extern const int MMBUF_SIZE;
+EXTERN int memory_size;
+
 // FS
 EXTERN struct file_desc f_desc_table[NR_FILE_DESC]; // 文件handler点缓存
 EXTERN struct inode inode_table[NR_INODE];

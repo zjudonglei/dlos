@@ -29,7 +29,7 @@ struct proc {
 	int ticks;
 	int priority;
 
-	u32 pid;
+	//u32 pid;
 	char name[16];
 
 	int p_flags; // 进程暂停标志
@@ -45,6 +45,8 @@ struct proc {
 
 	int nr_tty;
 
+	int p_parent;
+
 	struct file_desc* filp[NR_FILES];
 };
 
@@ -56,23 +58,33 @@ struct task {
 
 #define proc2pid(x)(x - proc_table) // 获取进程号，其实就是global.c中的下标
 
-#define NR_TASKS 4 // ring1
-#define NR_PROCS 3 // ring3
+#define NR_TASKS 5 // ring1
+#define NR_PROCS 32 // ring3
+#define NR_NATIVE_PROCS 4 // TestA、B、C Init 
 #define FIRST_PROC proc_table[0]
 #define LAST_PROC proc_table[NR_TASKS + NR_PROCS - 1]
 
-#define STACK_SIZE_TTY 0x8000
-#define STACK_SIZE_SYS 0x8000
-#define STACK_SIZE_HD 0x8000
-#define STACK_SIZE_FS 0x8000
-#define STACK_SIZE_TESTA 0x8000 // 任务A的堆栈
-#define STACK_SIZE_TESTB 0x8000 // 任务B的堆栈
-#define STACK_SIZE_TESTC 0x8000
+#define PROCS_BASE 0xA00000 // 10MB
+#define PROC_IMAGE_SIZE_DEFAULT 0x100000 // 1MB
+#define PROC_ORIGIN_STASK 0x400 // 1kb
+
+#define STACK_SIZE_DEFAULT 0x4000
+#define STACK_SIZE_TTY STACK_SIZE_DEFAULT
+#define STACK_SIZE_SYS STACK_SIZE_DEFAULT
+#define STACK_SIZE_HD STACK_SIZE_DEFAULT
+#define STACK_SIZE_FS STACK_SIZE_DEFAULT
+#define STACK_SIZE_MM STACK_SIZE_DEFAULT
+#define STACK_SIZE_INIT STACK_SIZE_DEFAULT
+#define STACK_SIZE_TESTA STACK_SIZE_DEFAULT // 任务A的堆栈
+#define STACK_SIZE_TESTB STACK_SIZE_DEFAULT // 任务B的堆栈
+#define STACK_SIZE_TESTC STACK_SIZE_DEFAULT
 #define STACK_SIZE_TOTAL (  \
 	STACK_SIZE_TTY + \
 	STACK_SIZE_SYS + \
 	STACK_SIZE_HD + \
 	STACK_SIZE_FS + \
+	STACK_SIZE_MM + \
+	STACK_SIZE_INIT + \
 	STACK_SIZE_TESTA + \
 	STACK_SIZE_TESTB + \
 	STACK_SIZE_TESTC) // 所有任务的堆栈
